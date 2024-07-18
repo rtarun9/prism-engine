@@ -4,13 +4,27 @@ LRESULT CALLBACK window_proc(HWND window_handle, UINT message, WPARAM wparam, LP
 {
     switch (message)
     {
+        // WM_CLOSE is called when the window is closed (shortcut key or the X button).
     case WM_CLOSE: {
         DestroyWindow(window_handle);
     }
     break;
 
+    // Posted when DestroyWindow is called.
     case WM_DESTROY: {
         PostQuitMessage(0);
+    }
+    break;
+
+    case WM_PAINT: {
+        PAINTSTRUCT ps = {};
+        HDC handle_to_device_context = BeginPaint(window_handle, &ps);
+
+        RECT window_rect = ps.rcPaint;
+        PatBlt(handle_to_device_context, window_rect.left, window_rect.top, window_rect.right - window_rect.left,
+               window_rect.bottom - window_rect.top, BLACKNESS);
+
+        EndPaint(window_handle, &ps);
     }
     break;
 
@@ -65,8 +79,6 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_li
             break;
         }
     }
-
-    MessageBoxA(NULL, "Terminating window", "X", MB_OK);
 
     return 0;
 }
