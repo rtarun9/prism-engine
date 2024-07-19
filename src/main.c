@@ -23,28 +23,27 @@ void resize_bitmap(const i32 width, const i32 height)
     g_bitmap_width = width;
     g_bitmap_height = height;
 
-    const i32 back_buffer_size_in_bytes = 4 * width * height;
-    g_backbuffer = VirtualAlloc(NULL, back_buffer_size_in_bytes, MEM_COMMIT, PAGE_READWRITE);
+    const i32 backbuffer_size_in_bytes = 4 * width * height;
+    g_backbuffer = VirtualAlloc(NULL, backbuffer_size_in_bytes, MEM_COMMIT, PAGE_READWRITE);
 
     // Setup the bitmap info struct
-    BITMAPINFO bitmap_info = {};
 
     // Note the negative height, this is to ensure that the bitmap is a top down DIB.
-    bitmap_info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    bitmap_info.bmiHeader.biWidth = width;
-    bitmap_info.bmiHeader.biHeight = -1 * height;
-    bitmap_info.bmiHeader.biPlanes = 1;
-    bitmap_info.bmiHeader.biBitCount = 32;
-    bitmap_info.bmiHeader.biCompression = BI_RGB;
-    bitmap_info.bmiHeader.biSizeImage = 0;
+    g_bitmap_info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    g_bitmap_info.bmiHeader.biWidth = width;
+    g_bitmap_info.bmiHeader.biHeight = -1 * height;
+    g_bitmap_info.bmiHeader.biPlanes = 1;
+    g_bitmap_info.bmiHeader.biBitCount = 32;
+    g_bitmap_info.bmiHeader.biCompression = BI_RGB;
+    g_bitmap_info.bmiHeader.biSizeImage = 0;
 
     // For now, fill in the buffer with data based on pixel position.
     for (i32 y = 0; y < g_bitmap_height; ++y)
     {
         for (i32 x = 0; x < g_bitmap_width; x++)
         {
-            *(g_backbuffer + (x + y * g_bitmap_width) * 4 + 0) = (u8)0x00;
-            *(g_backbuffer + (x + y * g_bitmap_width) * 4 + 1) = (u8)0x00;
+            *(g_backbuffer + (x + y * g_bitmap_width) * 4 + 0) = x;
+            *(g_backbuffer + (x + y * g_bitmap_width) * 4 + 1) = y;
             *(g_backbuffer + (x + y * g_bitmap_width) * 4 + 2) = (u8)0x00;
             *(g_backbuffer + (x + y * g_bitmap_width) * 4 + 3) = (u8)0x00;
         }
