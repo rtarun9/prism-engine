@@ -1,21 +1,22 @@
 REM @echo off
 call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat" x64
 
-REM the first script argument determines if debugger must be opened. 1 opens the debugger, 0 does not.
-set open_vs_debugger=%1
-
-REM the second script argument will run the built executable if the value is 1. Will only occur if debugger is not opened.
-set run_executable=%2
+REM The first script argument can be : (a) open_debugger or (b) empty (for compilation only) or (c) run
 
 mkdir build
 pushd build
 cl /Zi ../src/main.c /link /SUBSYSTEM:windows user32.lib gdi32.lib
 popd
 
-IF %open_vs_debugger%==1 (
+IF %1.==. GOTO end
+
+IF "%1"=="open_debugger" (
     devenv build/main.exe
 )
 
-IF %run_executable%==1 (
-    start "" build/main.exe
+IF "%1"=="run" (
+    cd build/
+    main.exe
 )
+
+:end
