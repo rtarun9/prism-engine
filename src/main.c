@@ -7,21 +7,49 @@
 // Explanation of the rendering logic:
 // The engine allocates memory for its own bitmap and renders into it. GDI's (graphics device interface) role is to
 // simply 'Bit' or copy the rendered bitmap into the actual device context.
-global_variable BITMAPINFO g_bitmap_info;
-global_variable u8 *g_backbuffer;
-global_variable i32 g_bitmap_width;
-global_variable i32 g_bitmap_height;
+typedef struct
+{
+    BITMAPINFO bitmap_info;
+    u8 *backbuffer;
+    i32 bitmap_width;
+    i32 bitmap_height;
+} offscreen_framebuffer_t;
+
+typedef struct
+{
+    i32 width;
+    i32 height;
+} dimensions_t;
+
+global_variable offscreen_framebuffer_t g_offscreen_framebuffer;
+
+global_variable HDC g_window_device_context;
+
+global_variable i32 g_blue_offset;
+global_variable i32 g_green_offset;
+
+internal dimensions_t get_dimensions_for_window(const HWND window_handle)
+{
+    RECT client_rect = {};
+    GetClientRect(window_handle, &client_rect);
+
+    dimensions_t dimensions = {};
+    dimensions.width = client_rect.right - client_rect.left;
+    dimensions.height = client_rect.bottom - client_rect.top;
+
+    return dimensions;
+}
 
 internal void draw_to_backbuffer(const i32 blue_offset, const i32 green_offset)
 {
     // For now, fill in the buffer with data based on pixel position.
-    u8 *row = (u8 *)g_backbuffer;
-    const u32 row_stride = g_bitmap_width * 4;
+    u8 *row = (u8 *)g_offscreen_framebuffer.backbuffer;
+    const u32 row_stride = g_offscreen_framebuffer.bitmap_width * 4;
 
-    for (i32 y = 0; y < g_bitmap_height; ++y)
+    for (i32 y = 0; y < g_offscreen_framebuffer.bitmap_height; ++y)
     {
         u32 *pixel = (u32 *)row;
-        for (i32 x = 0; x < g_bitmap_width; x++)
+        for (i32 x = 0; x < g_offscreen_framebuffer.bitmap_width; x++)
         {
             // Each pixel represents a RGBX value, which in memory is lied out as:
             // BB GG RR xx
@@ -37,34 +65,36 @@ internal void draw_to_backbuffer(const i32 blue_offset, const i32 green_offset)
 // Function to create / resize the bitmap info header and memory for backbuffer.
 internal void resize_bitmap(const i32 width, const i32 height)
 {
-    if (g_backbuffer)
+    if (g_offscreen_framebuffer.backbuffer)
     {
-        VirtualFree(g_backbuffer, 0, MEM_RELEASE);
+        VirtualFree(g_offscreen_framebuffer.backbuffer, 0, MEM_RELEASE);
     }
 
-    g_bitmap_width = width;
-    g_bitmap_height = height;
+    g_offscreen_framebuffer.bitmap_width = width;
+    g_offscreen_framebuffer.bitmap_height = height;
 
     const i32 backbuffer_size_in_bytes = 4 * width * height;
-    g_backbuffer = VirtualAlloc(NULL, backbuffer_size_in_bytes, MEM_COMMIT, PAGE_READWRITE);
+    g_offscreen_framebuffer.backbuffer = VirtualAlloc(NULL, backbuffer_size_in_bytes, MEM_COMMIT, PAGE_READWRITE);
 
     // Setup the bitmap info struct
 
-    // Note the negative height, this is to ensure that the bitmap is a top down DIB.
-    g_bitmap_info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    g_bitmap_info.bmiHeader.biWidth = width;
-    g_bitmap_info.bmiHeader.biHeight = -1 * height;
-    g_bitmap_info.bmiHeader.biPlanes = 1;
-    g_bitmap_info.bmiHeader.biBitCount = 32;
-    g_bitmap_info.bmiHeader.biCompression = BI_RGB;
-    g_bitmap_info.bmiHeader.biSizeImage = 0;
+    // note(rtarun9): the negative height, this is to ensure that the bitmap is a top down DIB.
+    g_offscreen_framebuffer.bitmap_info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    g_offscreen_framebuffer.bitmap_info.bmiHeader.biWidth = width;
+    g_offscreen_framebuffer.bitmap_info.bmiHeader.biHeight = -1 * height;
+    g_offscreen_framebuffer.bitmap_info.bmiHeader.biPlanes = 1;
+    g_offscreen_framebuffer.bitmap_info.bmiHeader.biBitCount = 32;
+    g_offscreen_framebuffer.bitmap_info.bmiHeader.biCompression = BI_RGB;
+    g_offscreen_framebuffer.bitmap_info.bmiHeader.biSizeImage = 0;
+
+    draw_to_backbuffer(g_blue_offset, g_green_offset);
 }
 
-internal void update_backbuffer(const HDC device_context, RECT *rect)
+internal void update_backbuffer(const HDC device_context, const i32 window_width, const i32 window_height)
 {
-
-    StretchDIBits(device_context, 0, 0, g_bitmap_width, g_bitmap_height, 0, 0, rect->right - rect->left,
-                  rect->bottom - rect->top, (void *)g_backbuffer, &g_bitmap_info, DIB_RGB_COLORS, SRCCOPY);
+    StretchDIBits(device_context, 0, 0, window_width, window_height, 0, 0, g_offscreen_framebuffer.bitmap_width,
+                  g_offscreen_framebuffer.bitmap_height, (void *)g_offscreen_framebuffer.backbuffer,
+                  &g_offscreen_framebuffer.bitmap_info, DIB_RGB_COLORS, SRCCOPY);
 }
 
 LRESULT CALLBACK window_proc(HWND window_handle, UINT message, WPARAM wparam, LPARAM lparam)
@@ -86,10 +116,9 @@ LRESULT CALLBACK window_proc(HWND window_handle, UINT message, WPARAM wparam, LP
     case WM_PAINT: {
         PAINTSTRUCT ps = {};
 
+        dimensions_t client_dimensions = get_dimensions_for_window(window_handle);
         HDC handle_to_device_context = BeginPaint(window_handle, &ps);
-        RECT client_rect = {};
-        GetClientRect(window_handle, &client_rect);
-        update_backbuffer(handle_to_device_context, &client_rect);
+        update_backbuffer(g_window_device_context, client_dimensions.width, client_dimensions.height);
 
         EndPaint(window_handle, &ps);
     }
@@ -100,17 +129,6 @@ LRESULT CALLBACK window_proc(HWND window_handle, UINT message, WPARAM wparam, LP
         {
             DestroyWindow(window_handle);
         }
-    }
-    break;
-
-    case WM_SIZE: {
-        RECT client_rect = {};
-        GetClientRect(window_handle, &client_rect);
-
-        const i32 width = client_rect.right - client_rect.left;
-        const i32 height = client_rect.bottom - client_rect.top;
-
-        resize_bitmap(width, height);
     }
     break;
 
@@ -126,6 +144,7 @@ LRESULT CALLBACK window_proc(HWND window_handle, UINT message, WPARAM wparam, LP
 int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int show_command)
 {
     // Create the window class, which defines a set of behaviours that multiple windows might have in common.
+    // Since CS_OWNDC is used, the device context can be fetched once and reused multiple times.
     WNDCLASSA window_class = {};
     window_class.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
     window_class.lpfnWndProc = window_proc;
@@ -147,10 +166,11 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_li
         OutputDebugStringA("Failed to create window.");
     }
 
+    g_window_device_context = GetDC(window_handle);
+
     ShowWindow(window_handle, SW_SHOWNORMAL);
 
-    i32 blue_offset = 0;
-    i32 green_offset = 0;
+    resize_bitmap(1080, 720);
 
     // Main game loop.
     while (1)
@@ -168,20 +188,16 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_li
             break;
         }
 
-        draw_to_backbuffer(blue_offset, green_offset);
+        draw_to_backbuffer(g_blue_offset, g_green_offset);
 
-        const HDC device_context = GetDC(window_handle);
+        dimensions_t client_dimensions = get_dimensions_for_window(window_handle);
+        update_backbuffer(g_window_device_context, client_dimensions.width, client_dimensions.height);
 
-        RECT client_rect = {};
-        GetClientRect(window_handle, &client_rect);
-
-        update_backbuffer(device_context, &client_rect);
-
-        ReleaseDC(window_handle, device_context);
-
-        ++blue_offset;
-        green_offset += 2;
+        ++g_blue_offset;
+        g_green_offset += 2;
     }
+
+    ReleaseDC(window_handle, g_window_device_context);
 
     return 0;
 }
