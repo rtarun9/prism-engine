@@ -5,19 +5,41 @@
 // Global variables (which will be removed later).
 
 // Explanation of the rendering logic:
-// The engine creates its own bitmap and renders into it. GDI's (graphics device interface) role is to simply
-// 'Bit' or copy the rendered bitmap into the actual device context.
-static BITMAPINFO g_bitmap_info;
-static u8 *g_backbuffer;
-static i32 g_bitmap_width;
-static i32 g_bitmap_height;
+// The engine allocates memory for its own bitmap and renders into it. GDI's (graphics device interface) role is to
+// simply 'Bit' or copy the rendered bitmap into the actual device context.
+global_variable BITMAPINFO g_bitmap_info;
+global_variable u8 *g_backbuffer;
+global_variable i32 g_bitmap_width;
+global_variable i32 g_bitmap_height;
+
+internal void draw_to_backbuffer(const i32 blue_offset, const i32 green_offset)
+{
+    // For now, fill in the buffer with data based on pixel position.
+    u8 *row = (u8 *)g_backbuffer;
+    const u32 row_stride = g_bitmap_width * 4;
+
+    for (i32 y = 0; y < g_bitmap_height; ++y)
+    {
+        u32 *pixel = (u32 *)row;
+        for (i32 x = 0; x < g_bitmap_width; x++)
+        {
+            // Each pixel represents a RGBX value, which in memory is lied out as:
+            // BB GG RR xx
+            u8 blue = x + blue_offset;
+            u8 green = y + green_offset;
+            *pixel++ = (green << 8) | blue;
+        }
+
+        row += row_stride;
+    }
+}
 
 // Function to create / resize the bitmap info header and memory for backbuffer.
-void resize_bitmap(const i32 width, const i32 height)
+internal void resize_bitmap(const i32 width, const i32 height)
 {
     if (g_backbuffer)
     {
-        VirtualFree(g_backbuffer, 0u, MEM_RELEASE);
+        VirtualFree(g_backbuffer, 0, MEM_RELEASE);
     }
 
     g_bitmap_width = width;
@@ -36,25 +58,13 @@ void resize_bitmap(const i32 width, const i32 height)
     g_bitmap_info.bmiHeader.biBitCount = 32;
     g_bitmap_info.bmiHeader.biCompression = BI_RGB;
     g_bitmap_info.bmiHeader.biSizeImage = 0;
-
-    // For now, fill in the buffer with data based on pixel position.
-    for (i32 y = 0; y < g_bitmap_height; ++y)
-    {
-        for (i32 x = 0; x < g_bitmap_width; x++)
-        {
-            *(g_backbuffer + (x + y * g_bitmap_width) * 4 + 0) = x;
-            *(g_backbuffer + (x + y * g_bitmap_width) * 4 + 1) = y;
-            *(g_backbuffer + (x + y * g_bitmap_width) * 4 + 2) = (u8)0x00;
-            *(g_backbuffer + (x + y * g_bitmap_width) * 4 + 3) = (u8)0x00;
-        }
-    }
 }
 
-void update_backbuffer(const HDC device_context, RECT *rect)
+internal void update_backbuffer(const HDC device_context, RECT *rect)
 {
 
-    StretchDIBits(device_context, 0, 0, rect->right - rect->left, rect->bottom - rect->top, 0, 0, g_bitmap_width,
-                  g_bitmap_height, (void *)g_backbuffer, &g_bitmap_info, DIB_RGB_COLORS, SRCCOPY);
+    StretchDIBits(device_context, 0, 0, g_bitmap_width, g_bitmap_height, 0, 0, rect->right - rect->left,
+                  rect->bottom - rect->top, (void *)g_backbuffer, &g_bitmap_info, DIB_RGB_COLORS, SRCCOPY);
 }
 
 LRESULT CALLBACK window_proc(HWND window_handle, UINT message, WPARAM wparam, LPARAM lparam)
@@ -77,9 +87,9 @@ LRESULT CALLBACK window_proc(HWND window_handle, UINT message, WPARAM wparam, LP
         PAINTSTRUCT ps = {};
 
         HDC handle_to_device_context = BeginPaint(window_handle, &ps);
-        RECT window_rect = ps.rcPaint;
-
-        update_backbuffer(handle_to_device_context, &window_rect);
+        RECT client_rect = {};
+        GetClientRect(window_handle, &client_rect);
+        update_backbuffer(handle_to_device_context, &client_rect);
 
         EndPaint(window_handle, &ps);
     }
@@ -139,11 +149,14 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_li
 
     ShowWindow(window_handle, SW_SHOWNORMAL);
 
+    i32 blue_offset = 0;
+    i32 green_offset = 0;
+
     // Main game loop.
     while (1)
     {
         MSG message = {};
-        if (PeekMessageA(&message, NULL, 0, 0, PM_REMOVE))
+        while (PeekMessageA(&message, NULL, 0, 0, PM_REMOVE))
         {
             TranslateMessage(&message);
             DispatchMessage(&message);
@@ -154,6 +167,20 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_li
         {
             break;
         }
+
+        draw_to_backbuffer(blue_offset, green_offset);
+
+        const HDC device_context = GetDC(window_handle);
+
+        RECT client_rect = {};
+        GetClientRect(window_handle, &client_rect);
+
+        update_backbuffer(device_context, &client_rect);
+
+        ReleaseDC(window_handle, device_context);
+
+        ++blue_offset;
+        green_offset += 2;
     }
 
     return 0;
