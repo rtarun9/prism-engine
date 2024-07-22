@@ -124,10 +124,40 @@ LRESULT CALLBACK window_proc(HWND window_handle, UINT message, WPARAM wparam, LP
     }
     break;
 
-    case WM_KEYDOWN: {
-        if (wparam == VK_ESCAPE)
+    case WM_KEYDOWN:
+    case WM_KEYUP: {
+        // Note : the 31st bit of lparam is 0 for WM_KEYDOWN and 1 for WM_KEYUP
+        const int is_key_down = (lparam & (1 << 31)) == 0;
+
+        if (is_key_down && wparam == VK_ESCAPE)
         {
             DestroyWindow(window_handle);
+        }
+
+        if (is_key_down)
+        {
+            switch (wparam)
+            {
+            case VK_LEFT: {
+                g_blue_offset++;
+            }
+            break;
+
+            case VK_RIGHT: {
+                g_blue_offset--;
+            }
+            break;
+
+            case VK_UP: {
+                g_green_offset++;
+            }
+            break;
+
+            case VK_DOWN: {
+                g_green_offset--;
+            }
+            break;
+            }
         }
     }
     break;
@@ -143,6 +173,12 @@ LRESULT CALLBACK window_proc(HWND window_handle, UINT message, WPARAM wparam, LP
 
 int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_line, int show_command)
 {
+    // Get the number of increments / counts the high performance counter does in a single second.
+    // According to MSDN, the high perf counter has granularity in the < 1 micro second space.
+    // The number of counter increments per second is fixed, and can be fetched at application startup alone.
+    LARGE_INTEGER counts_per_second = {};
+    QueryPerformanceFrequency(&counts_per_second);
+
     // Create the window class, which defines a set of behaviours that multiple windows might have in common.
     // Since CS_OWNDC is used, the device context can be fetched once and reused multiple times.
     WNDCLASSA window_class = {};
@@ -172,6 +208,20 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_li
 
     resize_bitmap(1080, 720);
 
+    // In the main loop, the counter is queried only once, at the end of the frame.
+    // This is to ensure that nothing is missed between the end of loop, and the start (and by doing so there is only
+    // one query performance counter function call per loop iteration).
+    LARGE_INTEGER end_counter = {};
+    QueryPerformanceCounter(&end_counter);
+
+    // RDTSC stands for read timestamp counter. Each processes will have a time stamp counter, which basically
+    // increments after each clock cycle.
+    // The __rdtsc call is a actually not a function call, but a intrinsic, which tells the compiler to insert a
+    // assembly language call in place of the function definition. For example, when the dis-assembly is examined, the
+    // rdtsc x86 call is inserted rather than a function call. This can cause some problems when instruction reordering
+    // happens, since the asm call may not be reordered.
+    u64 end_timestamp_counter = __rdtsc();
+
     // Main game loop.
     while (1)
     {
@@ -193,8 +243,25 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR command_li
         dimensions_t client_dimensions = get_dimensions_for_window(window_handle);
         update_backbuffer(g_window_device_context, client_dimensions.width, client_dimensions.height);
 
-        ++g_blue_offset;
-        g_green_offset += 2;
+        LARGE_INTEGER current_counter = {};
+        QueryPerformanceCounter(&current_counter);
+
+        i64 counter_difference = current_counter.QuadPart - end_counter.QuadPart;
+        end_counter = current_counter;
+
+        u64 current_timestamp_counter = __rdtsc();
+        u64 timestamp_difference = current_timestamp_counter - end_timestamp_counter;
+
+        end_timestamp_counter = current_timestamp_counter;
+
+        i64 ms_per_frame = (1000 * counter_difference) / counts_per_second.QuadPart;
+        i64 fps = counts_per_second.QuadPart / counter_difference;
+
+        char counter_difference_str[256];
+        wsprintf(counter_difference_str,
+                 "Counter Difference : %d, MS Per Frame : %d, FPS : %d, RDTSC Difference : %d\n",
+                 (i32)counter_difference, (i32)ms_per_frame, (i32)fps, (i32)timestamp_difference);
+        OutputDebugStringA(counter_difference_str);
     }
 
     ReleaseDC(window_handle, g_window_device_context);
