@@ -14,6 +14,11 @@ typedef int16_t i16;
 typedef int32_t i32;
 typedef int64_t i64;
 
+typedef i32 b32;
+
+typedef float f32;
+typedef double f64;
+
 // #defines for the static keyword for explicitness.
 #define internal static
 #define global_variable static
