@@ -18,8 +18,8 @@ typedef struct
 // key was down last frame and no is released).
 typedef struct
 {
-    b32 state_changed;
-    b32 is_key_down;
+    b8 state_changed;
+    b8 is_key_down;
 } game_key_state_t;
 
 // note(rtarun9) : Create an array for this in the future?

@@ -21,7 +21,7 @@ typedef struct
 
 typedef struct
 {
-    unsigned char key_states[256];
+    b8 key_states[256];
 } win32_keyboard_state_t;
 
 internal win32_dimensions_t get_dimensions_for_window(const HWND window_handle);

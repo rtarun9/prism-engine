@@ -3,35 +3,18 @@
 #include "win32_main.h"
 
 internal game_key_state_t
-get_game_key_state(win32_keyboard_state_t *restrict keyboard_state_1_ptr,
-                   win32_keyboard_state_t *restrict keyboard_state_2_ptr,
+get_game_key_state(win32_keyboard_state_t *restrict current_keyboard_state,
+                   win32_keyboard_state_t *restrict previous_keyboard_state,
                    unsigned char virtual_keycode)
 {
-    b32 is_key_down_1 =
-        keyboard_state_1_ptr->key_states[virtual_keycode] & 0x80;
+    b8 is_key_down = current_keyboard_state->key_states[virtual_keycode] & 0x80;
 
-    b32 is_key_down_2 =
-        keyboard_state_2_ptr->key_states[virtual_keycode] & 0x80;
-
-    /*
-    if (is_key_down_1)
-    {
-        char message_buffer[256];
-        wsprintf(message_buffer, "%c is down!\n", virtual_keycode);
-        OutputDebugStringA(message_buffer);
-    }
-
-    if (is_key_down_1 != is_key_down_2)
-    {
-        char message_buffer[256];
-        wsprintf(message_buffer, "%c transition !\n", virtual_keycode);
-        OutputDebugStringA(message_buffer);
-    }
-    */
+    b8 was_key_down =
+        previous_keyboard_state->key_states[virtual_keycode] & 0x80;
 
     game_key_state_t key_state = {0};
-    key_state.is_key_down = is_key_down_1;
-    key_state.state_changed = is_key_down_1 != is_key_down_2;
+    key_state.is_key_down = is_key_down;
+    key_state.state_changed = is_key_down != was_key_down;
 
     return key_state;
 }
@@ -139,7 +122,7 @@ LRESULT CALLBACK win32_window_proc(HWND window_handle, UINT message,
     case WM_KEYUP: {
         // note(rtarun9) : the 31st bit of lparam is 0 for WM_KEYDOWN and 1 for
         // WM_KEYUP
-        const b32 is_key_down = (lparam & (1 << 31)) == 0;
+        const b8 is_key_down = (lparam & (1 << 31)) == 0;
 
         if (is_key_down && wparam == VK_ESCAPE)
         {
@@ -220,11 +203,13 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
     // To determine if a key state has changed, the platform layer will store 2
     // copies of input data structures, which are swapped each frame . Finding
     // state change becomes trivial in this case.
-    win32_keyboard_state_t keyboard_state_1 = {0};
-    win32_keyboard_state_t keyboard_state_2 = {0};
+    win32_keyboard_state_t current_keyboard_state = {0};
+    win32_keyboard_state_t previous_keyboard_state = {0};
 
-    win32_keyboard_state_t *keyboard_state_1_ptr = &keyboard_state_1;
-    win32_keyboard_state_t *keyboard_state_2_ptr = &keyboard_state_2;
+    win32_keyboard_state_t *current_keyboard_state_ptr =
+        &current_keyboard_state;
+    win32_keyboard_state_t *previous_keyboard_state_ptr =
+        &previous_keyboard_state;
 
     // Main game loop.
     while (1)
@@ -243,20 +228,20 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
         }
 
         // Fill the keyboard state struct.
-        GetKeyboardState(&keyboard_state_1_ptr->key_states[0]);
+        GetKeyboardState(&current_keyboard_state.key_states[0]);
 
         game_input_t game_input = {0};
-        game_input.keyboard_state.key_w =
-            get_game_key_state(keyboard_state_1_ptr, keyboard_state_2_ptr, 'W');
+        game_input.keyboard_state.key_w = get_game_key_state(
+            current_keyboard_state_ptr, previous_keyboard_state_ptr, 'W');
 
-        game_input.keyboard_state.key_a =
-            get_game_key_state(keyboard_state_1_ptr, keyboard_state_2_ptr, 'A');
+        game_input.keyboard_state.key_s = get_game_key_state(
+            current_keyboard_state_ptr, previous_keyboard_state_ptr, 'S');
 
-        game_input.keyboard_state.key_s =
-            get_game_key_state(keyboard_state_1_ptr, keyboard_state_2_ptr, 'S');
+        game_input.keyboard_state.key_a = get_game_key_state(
+            current_keyboard_state_ptr, previous_keyboard_state_ptr, 'A');
 
-        game_input.keyboard_state.key_d =
-            get_game_key_state(keyboard_state_1_ptr, keyboard_state_2_ptr, 'D');
+        game_input.keyboard_state.key_d = get_game_key_state(
+            current_keyboard_state_ptr, previous_keyboard_state_ptr, 'D');
 
         // note(rtarun9) : Should rendering only be done when WM_PAINT is
         // called, or should it be called in the game loop always?
@@ -330,9 +315,11 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
         */
 
         // Swap keyboard states.
-        win32_keyboard_state_t *temp = keyboard_state_1_ptr;
-        keyboard_state_1_ptr = keyboard_state_2_ptr;
-        keyboard_state_2_ptr = temp;
+        {
+            win32_keyboard_state_t *temp = current_keyboard_state_ptr;
+            current_keyboard_state_ptr = previous_keyboard_state_ptr;
+            previous_keyboard_state_ptr = temp;
+        }
     }
 
     ReleaseDC(window_handle, window_device_context);
