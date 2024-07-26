@@ -5,8 +5,8 @@
 
 #include <windows.h>
 
-// Note : The biHeight parameter in bitmap_info_header is negative (so that the
-// top left corner is the origin).
+// note(rtarun9) : The biHeight parameter in bitmap_info_header is negative (so
+// that the top left corner is the origin).
 typedef struct
 {
     BITMAPINFOHEADER bitmap_info_header;
@@ -18,6 +18,11 @@ typedef struct
     i32 width;
     i32 height;
 } win32_dimensions_t;
+
+typedef struct
+{
+    unsigned char key_states[256];
+} win32_keyboard_state_t;
 
 internal win32_dimensions_t get_dimensions_for_window(const HWND window_handle);
 

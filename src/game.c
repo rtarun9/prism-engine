@@ -1,8 +1,15 @@
 #include "game.h"
 
-void game_render(game_framebuffer_t *game_framebuffer, i32 blue_offset,
-                 i32 green_offset)
+void game_render(game_framebuffer_t *game_framebuffer, game_input_t *game_input)
 {
+    local_persist f32 blue_offset = 0.0f;
+    blue_offset += 0.01f * game_input->keyboard_state.key_a.is_key_down;
+    blue_offset -= 0.01f * game_input->keyboard_state.key_d.is_key_down;
+
+    local_persist f32 green_offset = 0;
+    green_offset += 0.01f * game_input->keyboard_state.key_w.is_key_down;
+    green_offset -= 0.01f * game_input->keyboard_state.key_s.is_key_down;
+
     u8 *row = (u8 *)game_framebuffer->backbuffer_memory;
     const u32 row_stride = game_framebuffer->width * 4;
 

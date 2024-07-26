@@ -2,6 +2,40 @@
 
 #include "win32_main.h"
 
+internal game_key_state_t
+get_game_key_state(win32_keyboard_state_t *restrict keyboard_state_1_ptr,
+                   win32_keyboard_state_t *restrict keyboard_state_2_ptr,
+                   unsigned char virtual_keycode)
+{
+    b32 is_key_down_1 =
+        keyboard_state_1_ptr->key_states[virtual_keycode] & 0x80;
+
+    b32 is_key_down_2 =
+        keyboard_state_2_ptr->key_states[virtual_keycode] & 0x80;
+
+    /*
+    if (is_key_down_1)
+    {
+        char message_buffer[256];
+        wsprintf(message_buffer, "%c is down!\n", virtual_keycode);
+        OutputDebugStringA(message_buffer);
+    }
+
+    if (is_key_down_1 != is_key_down_2)
+    {
+        char message_buffer[256];
+        wsprintf(message_buffer, "%c transition !\n", virtual_keycode);
+        OutputDebugStringA(message_buffer);
+    }
+    */
+
+    game_key_state_t key_state = {0};
+    key_state.is_key_down = is_key_down_1;
+    key_state.state_changed = is_key_down_1 != is_key_down_2;
+
+    return key_state;
+}
+
 // Explanation of the rendering logic:
 // The engine allocates memory for its own bitmap and renders into it. GDI's
 // (graphics device interface) role is to simply 'Blit' or copy the rendered
@@ -9,9 +43,6 @@
 // The bitmap will be of fixed size and will not depend on window resolution.
 
 global_variable win32_offscreen_framebuffer_t g_offscreen_framebuffer;
-
-global_variable i32 g_blue_offset;
-global_variable i32 g_green_offset;
 
 internal win32_dimensions_t get_dimensions_for_window(const HWND window_handle)
 {
@@ -40,7 +71,7 @@ internal void win32_resize_bitmap(const i32 width, const i32 height)
 
     // Setup the bitmap info struct
 
-    // note(rtarun9): the negative height, this is to ensure that the bitmap is
+    // note(rtarun9) : the negative height, this is to ensure that the bitmap is
     // a top down DIB.
     g_offscreen_framebuffer.bitmap_info_header.biSize =
         sizeof(BITMAPINFOHEADER);
@@ -56,8 +87,6 @@ internal void win32_resize_bitmap(const i32 width, const i32 height)
         g_offscreen_framebuffer.backbuffer_memory;
     game_framebuffer.width = width;
     game_framebuffer.height = height;
-
-    game_render(&game_framebuffer, g_blue_offset, g_green_offset);
 }
 
 internal void win32_update_backbuffer(const HDC device_context,
@@ -108,39 +137,13 @@ LRESULT CALLBACK win32_window_proc(HWND window_handle, UINT message,
 
     case WM_KEYDOWN:
     case WM_KEYUP: {
-        // note(rtarun9): the 31st bit of lparam is 0 for WM_KEYDOWN and 1 for
+        // note(rtarun9) : the 31st bit of lparam is 0 for WM_KEYDOWN and 1 for
         // WM_KEYUP
         const b32 is_key_down = (lparam & (1 << 31)) == 0;
 
         if (is_key_down && wparam == VK_ESCAPE)
         {
             DestroyWindow(window_handle);
-        }
-
-        if (is_key_down)
-        {
-            switch (wparam)
-            {
-            case VK_LEFT: {
-                g_blue_offset++;
-            }
-            break;
-
-            case VK_RIGHT: {
-                g_blue_offset--;
-            }
-            break;
-
-            case VK_UP: {
-                g_green_offset++;
-            }
-            break;
-
-            case VK_DOWN: {
-                g_green_offset--;
-            }
-            break;
-            }
         }
     }
     break;
@@ -213,6 +216,16 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
     // not be reordered.
     u64 end_timestamp_counter = __rdtsc();
 
+    // Some explanation for the input module :
+    // To determine if a key state has changed, the platform layer will store 2
+    // copies of input data structures, which are swapped each frame . Finding
+    // state change becomes trivial in this case.
+    win32_keyboard_state_t keyboard_state_1 = {0};
+    win32_keyboard_state_t keyboard_state_2 = {0};
+
+    win32_keyboard_state_t *keyboard_state_1_ptr = &keyboard_state_1;
+    win32_keyboard_state_t *keyboard_state_2_ptr = &keyboard_state_2;
+
     // Main game loop.
     while (1)
     {
@@ -229,6 +242,22 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
             break;
         }
 
+        // Fill the keyboard state struct.
+        GetKeyboardState(&keyboard_state_1_ptr->key_states[0]);
+
+        game_input_t game_input = {0};
+        game_input.keyboard_state.key_w =
+            get_game_key_state(keyboard_state_1_ptr, keyboard_state_2_ptr, 'W');
+
+        game_input.keyboard_state.key_a =
+            get_game_key_state(keyboard_state_1_ptr, keyboard_state_2_ptr, 'A');
+
+        game_input.keyboard_state.key_s =
+            get_game_key_state(keyboard_state_1_ptr, keyboard_state_2_ptr, 'S');
+
+        game_input.keyboard_state.key_d =
+            get_game_key_state(keyboard_state_1_ptr, keyboard_state_2_ptr, 'D');
+
         // note(rtarun9) : Should rendering only be done when WM_PAINT is
         // called, or should it be called in the game loop always?
         game_framebuffer_t game_framebuffer = {0};
@@ -239,7 +268,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
         game_framebuffer.height =
             g_offscreen_framebuffer.bitmap_info_header.biHeight * -1;
 
-        game_render(&game_framebuffer, g_blue_offset, g_green_offset);
+        game_render(&game_framebuffer, &game_input);
 
         win32_dimensions_t client_dimensions =
             get_dimensions_for_window(window_handle);
@@ -261,6 +290,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
             i64 ms_per_frame =
                 (1000 * counter_difference) / counts_per_second.QuadPart;
 
+            /*
             char counter_difference_str[256];
             wsprintf(
                 counter_difference_str,
@@ -268,6 +298,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
                 "Per Frame : %d\n",
                 (i32)counter_difference, (i32)ms_per_frame);
             OutputDebugStringA(counter_difference_str);
+            */
         }
 
         LARGE_INTEGER current_counter = {0};
@@ -288,6 +319,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
             (1000 * counter_difference) / counts_per_second.QuadPart;
         i64 fps = counts_per_second.QuadPart / counter_difference;
 
+        /*
         char counter_difference_str[256];
         wsprintf(counter_difference_str,
                  "Counter Difference : %d, MS Per Frame : %d, FPS : %d, RDTSC "
@@ -295,6 +327,12 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
                  (i32)counter_difference, (i32)ms_per_frame, (i32)fps,
                  (i32)timestamp_difference);
         OutputDebugStringA(counter_difference_str);
+        */
+
+        // Swap keyboard states.
+        win32_keyboard_state_t *temp = keyboard_state_1_ptr;
+        keyboard_state_1_ptr = keyboard_state_2_ptr;
+        keyboard_state_2_ptr = temp;
     }
 
     ReleaseDC(window_handle, window_device_context);
