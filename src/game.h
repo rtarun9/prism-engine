@@ -8,7 +8,7 @@
 
 typedef struct
 {
-    u8 *backbuffer;
+    u8 *backbuffer_memory;
     i32 width;
     i32 height;
 } game_framebuffer_t;

@@ -3,7 +3,7 @@
 void game_render(game_framebuffer_t *game_framebuffer, i32 blue_offset,
                  i32 green_offset)
 {
-    u8 *row = (u8 *)game_framebuffer->backbuffer;
+    u8 *row = (u8 *)game_framebuffer->backbuffer_memory;
     const u32 row_stride = game_framebuffer->width * 4;
 
     for (i32 y = 0; y < game_framebuffer->height; ++y)

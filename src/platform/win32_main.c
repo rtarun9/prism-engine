@@ -1,40 +1,24 @@
 #include "../game.c"
 
-#include <windows.h>
-
-// Global variables (which will be removed later).
+#include "win32_main.h"
 
 // Explanation of the rendering logic:
 // The engine allocates memory for its own bitmap and renders into it. GDI's
-// (graphics device interface) role is to simply 'Bit' or copy the rendered
+// (graphics device interface) role is to simply 'Blit' or copy the rendered
 // bitmap into the actual device context.
-typedef struct
-{
-    BITMAPINFO bitmap_info;
-    u8 *backbuffer;
-    i32 bitmap_width;
-    i32 bitmap_height;
-} offscreen_framebuffer_t;
+// The bitmap will be of fixed size and will not depend on window resolution.
 
-typedef struct
-{
-    i32 width;
-    i32 height;
-} dimensions_t;
-
-global_variable offscreen_framebuffer_t g_offscreen_framebuffer;
-
-global_variable HDC g_window_device_context;
+global_variable win32_offscreen_framebuffer_t g_offscreen_framebuffer;
 
 global_variable i32 g_blue_offset;
 global_variable i32 g_green_offset;
 
-internal dimensions_t get_dimensions_for_window(const HWND window_handle)
+internal win32_dimensions_t get_dimensions_for_window(const HWND window_handle)
 {
-    RECT client_rect = {};
+    RECT client_rect = {0};
     GetClientRect(window_handle, &client_rect);
 
-    dimensions_t dimensions = {};
+    win32_dimensions_t dimensions = {};
     dimensions.width = client_rect.right - client_rect.left;
     dimensions.height = client_rect.bottom - client_rect.top;
 
@@ -42,54 +26,56 @@ internal dimensions_t get_dimensions_for_window(const HWND window_handle)
 }
 
 // Function to create / resize the bitmap info header and memory for backbuffer.
-internal void resize_bitmap(const i32 width, const i32 height)
+internal void win32_resize_bitmap(const i32 width, const i32 height)
 {
-    if (g_offscreen_framebuffer.backbuffer)
+    if (g_offscreen_framebuffer.backbuffer_memory)
     {
-        VirtualFree(g_offscreen_framebuffer.backbuffer, 0, MEM_RELEASE);
+        VirtualFree(g_offscreen_framebuffer.backbuffer_memory, 0, MEM_RELEASE);
     }
 
-    g_offscreen_framebuffer.bitmap_width = width;
-    g_offscreen_framebuffer.bitmap_height = height;
-
     const i32 backbuffer_size_in_bytes = 4 * width * height;
-    g_offscreen_framebuffer.backbuffer = VirtualAlloc(
+
+    g_offscreen_framebuffer.backbuffer_memory = VirtualAlloc(
         NULL, backbuffer_size_in_bytes, MEM_COMMIT, PAGE_READWRITE);
 
     // Setup the bitmap info struct
 
     // note(rtarun9): the negative height, this is to ensure that the bitmap is
     // a top down DIB.
-    g_offscreen_framebuffer.bitmap_info.bmiHeader.biSize =
+    g_offscreen_framebuffer.bitmap_info_header.biSize =
         sizeof(BITMAPINFOHEADER);
-    g_offscreen_framebuffer.bitmap_info.bmiHeader.biWidth = width;
-    g_offscreen_framebuffer.bitmap_info.bmiHeader.biHeight = -1 * height;
-    g_offscreen_framebuffer.bitmap_info.bmiHeader.biPlanes = 1;
-    g_offscreen_framebuffer.bitmap_info.bmiHeader.biBitCount = 32;
-    g_offscreen_framebuffer.bitmap_info.bmiHeader.biCompression = BI_RGB;
-    g_offscreen_framebuffer.bitmap_info.bmiHeader.biSizeImage = 0;
+    g_offscreen_framebuffer.bitmap_info_header.biWidth = width;
+    g_offscreen_framebuffer.bitmap_info_header.biHeight = -1 * height;
+    g_offscreen_framebuffer.bitmap_info_header.biPlanes = 1;
+    g_offscreen_framebuffer.bitmap_info_header.biBitCount = 32;
+    g_offscreen_framebuffer.bitmap_info_header.biCompression = BI_RGB;
+    g_offscreen_framebuffer.bitmap_info_header.biSizeImage = 0;
 
-    game_framebuffer_t game_framebuffer = {};
-    game_framebuffer.backbuffer = g_offscreen_framebuffer.backbuffer;
-    game_framebuffer.width = g_offscreen_framebuffer.bitmap_width;
-    game_framebuffer.height = g_offscreen_framebuffer.bitmap_height;
+    game_framebuffer_t game_framebuffer = {0};
+    game_framebuffer.backbuffer_memory =
+        g_offscreen_framebuffer.backbuffer_memory;
+    game_framebuffer.width = width;
+    game_framebuffer.height = height;
 
     game_render(&game_framebuffer, g_blue_offset, g_green_offset);
 }
 
-internal void update_backbuffer(const HDC device_context,
-                                const i32 window_width, const i32 window_height)
+internal void win32_update_backbuffer(const HDC device_context,
+                                      const i32 window_width,
+                                      const i32 window_height)
 {
+    BITMAPINFO bitmap_info;
+    bitmap_info.bmiHeader = g_offscreen_framebuffer.bitmap_info_header;
+
     StretchDIBits(device_context, 0, 0, window_width, window_height, 0, 0,
-                  g_offscreen_framebuffer.bitmap_width,
-                  g_offscreen_framebuffer.bitmap_height,
-                  (void *)g_offscreen_framebuffer.backbuffer,
-                  &g_offscreen_framebuffer.bitmap_info, DIB_RGB_COLORS,
-                  SRCCOPY);
+                  g_offscreen_framebuffer.bitmap_info_header.biWidth,
+                  g_offscreen_framebuffer.bitmap_info_header.biHeight * -1,
+                  (void *)g_offscreen_framebuffer.backbuffer_memory,
+                  &bitmap_info, DIB_RGB_COLORS, SRCCOPY);
 }
 
-LRESULT CALLBACK window_proc(HWND window_handle, UINT message, WPARAM wparam,
-                             LPARAM lparam)
+LRESULT CALLBACK win32_window_proc(HWND window_handle, UINT message,
+                                   WPARAM wparam, LPARAM lparam)
 {
     switch (message)
     {
@@ -109,11 +95,12 @@ LRESULT CALLBACK window_proc(HWND window_handle, UINT message, WPARAM wparam,
     case WM_PAINT: {
         PAINTSTRUCT ps = {};
 
-        dimensions_t client_dimensions =
+        win32_dimensions_t client_dimensions =
             get_dimensions_for_window(window_handle);
         HDC handle_to_device_context = BeginPaint(window_handle, &ps);
-        update_backbuffer(g_window_device_context, client_dimensions.width,
-                          client_dimensions.height);
+        win32_update_backbuffer(handle_to_device_context,
+                                client_dimensions.width,
+                                client_dimensions.height);
 
         EndPaint(window_handle, &ps);
     }
@@ -121,7 +108,8 @@ LRESULT CALLBACK window_proc(HWND window_handle, UINT message, WPARAM wparam,
 
     case WM_KEYDOWN:
     case WM_KEYUP: {
-        // Note : the 31st bit of lparam is 0 for WM_KEYDOWN and 1 for WM_KEYUP
+        // note(rtarun9): the 31st bit of lparam is 0 for WM_KEYDOWN and 1 for
+        // WM_KEYUP
         const b32 is_key_down = (lparam & (1 << 31)) == 0;
 
         if (is_key_down && wparam == VK_ESCAPE)
@@ -174,15 +162,15 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
     // granularity in the < 1 micro second space. The number of counter
     // increments per second is fixed, and can be fetched at application startup
     // alone.
-    LARGE_INTEGER counts_per_second = {};
+    LARGE_INTEGER counts_per_second = {0};
     QueryPerformanceFrequency(&counts_per_second);
 
     // Create the window class, which defines a set of behaviours that multiple
     // windows might have in common. Since CS_OWNDC is used, the device context
     // can be fetched once and reused multiple times.
-    WNDCLASSA window_class = {};
+    WNDCLASSA window_class = {0};
     window_class.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
-    window_class.lpfnWndProc = window_proc;
+    window_class.lpfnWndProc = win32_window_proc;
     window_class.cbClsExtra = 0;
     window_class.cbWndExtra = 0;
     window_class.hInstance = instance;
@@ -202,17 +190,17 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
         OutputDebugStringA("Failed to create window.");
     }
 
-    g_window_device_context = GetDC(window_handle);
+    HDC window_device_context = GetDC(window_handle);
 
     ShowWindow(window_handle, SW_SHOWNORMAL);
 
-    resize_bitmap(1080, 720);
+    win32_resize_bitmap(1080, 720);
 
     // In the main loop, the counter is queried only once, at the end of the
     // frame. This is to ensure that nothing is missed between the end of loop,
     // and the start (and by doing so there is only one query performance
     // counter function call per loop iteration).
-    LARGE_INTEGER end_counter = {};
+    LARGE_INTEGER end_counter = {0};
     QueryPerformanceCounter(&end_counter);
 
     // RDTSC stands for read timestamp counter. Each processes will have a time
@@ -241,23 +229,29 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
             break;
         }
 
-        game_framebuffer_t game_framebuffer = {};
-        game_framebuffer.backbuffer = g_offscreen_framebuffer.backbuffer;
-        game_framebuffer.width = g_offscreen_framebuffer.bitmap_width;
-        game_framebuffer.height = g_offscreen_framebuffer.bitmap_height;
+        // note(rtarun9) : Should rendering only be done when WM_PAINT is
+        // called, or should it be called in the game loop always?
+        game_framebuffer_t game_framebuffer = {0};
+        game_framebuffer.backbuffer_memory =
+            g_offscreen_framebuffer.backbuffer_memory;
+        game_framebuffer.width =
+            g_offscreen_framebuffer.bitmap_info_header.biWidth;
+        game_framebuffer.height =
+            g_offscreen_framebuffer.bitmap_info_header.biHeight * -1;
 
         game_render(&game_framebuffer, g_blue_offset, g_green_offset);
 
-        dimensions_t client_dimensions =
+        win32_dimensions_t client_dimensions =
             get_dimensions_for_window(window_handle);
 
         {
-            // First the time (in ms) that update_backbuffer takes.
+            // Find out how long updating the backbuffer takes.
             LARGE_INTEGER blit_start_counter = {};
             QueryPerformanceCounter(&blit_start_counter);
 
-            update_backbuffer(g_window_device_context, client_dimensions.width,
-                              client_dimensions.height);
+            win32_update_backbuffer(window_device_context,
+                                    client_dimensions.width,
+                                    client_dimensions.height);
 
             LARGE_INTEGER blit_end_counter = {};
             QueryPerformanceCounter(&blit_end_counter);
@@ -276,7 +270,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
             OutputDebugStringA(counter_difference_str);
         }
 
-        LARGE_INTEGER current_counter = {};
+        LARGE_INTEGER current_counter = {0};
         QueryPerformanceCounter(&current_counter);
 
         i64 counter_difference =
@@ -303,7 +297,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
         OutputDebugStringA(counter_difference_str);
     }
 
-    ReleaseDC(window_handle, g_window_device_context);
+    ReleaseDC(window_handle, window_device_context);
 
     return 0;
 }
