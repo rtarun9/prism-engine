@@ -24,6 +24,13 @@ typedef struct
     b8 key_states[256];
 } win32_keyboard_state_t;
 
+// To minimize memory allocators, memory is allocated upfront and used.
+typedef struct
+{
+    u64 permanent_memory_size;
+    u8 *permanent_memory;
+} win32_memory_allocator_t;
+
 internal win32_dimensions_t get_dimensions_for_window(const HWND window_handle);
 
 internal void win32_resize_bitmap(const i32 width, const i32 height);

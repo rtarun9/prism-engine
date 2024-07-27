@@ -6,6 +6,7 @@ internal game_key_state_t
 get_game_key_state(win32_keyboard_state_t *restrict current_keyboard_state,
                    win32_keyboard_state_t *restrict previous_keyboard_state,
                    unsigned char virtual_keycode)
+
 {
     b8 is_key_down = current_keyboard_state->key_states[virtual_keycode] & 0x80;
 
@@ -32,7 +33,7 @@ internal win32_dimensions_t get_dimensions_for_window(const HWND window_handle)
     RECT client_rect = {0};
     GetClientRect(window_handle, &client_rect);
 
-    win32_dimensions_t dimensions = {};
+    win32_dimensions_t dimensions = {0};
     dimensions.width = client_rect.right - client_rect.left;
     dimensions.height = client_rect.bottom - client_rect.top;
 
@@ -49,8 +50,9 @@ internal void win32_resize_bitmap(const i32 width, const i32 height)
 
     const i32 backbuffer_size_in_bytes = 4 * width * height;
 
-    g_offscreen_framebuffer.backbuffer_memory = VirtualAlloc(
-        NULL, backbuffer_size_in_bytes, MEM_COMMIT, PAGE_READWRITE);
+    g_offscreen_framebuffer.backbuffer_memory =
+        VirtualAlloc(NULL, backbuffer_size_in_bytes, MEM_COMMIT | MEM_RESERVE,
+                     PAGE_READWRITE);
 
     // Setup the bitmap info struct
 
@@ -211,6 +213,13 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
     win32_keyboard_state_t *previous_keyboard_state_ptr =
         &previous_keyboard_state;
 
+    // Allocate memory upfront.
+    win32_memory_allocator_t memory_allocator = {0};
+    memory_allocator.permanent_memory_size = MEGABYTE(128u);
+    memory_allocator.permanent_memory =
+        VirtualAlloc(NULL, memory_allocator.permanent_memory_size,
+                     MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+
     // Main game loop.
     while (1)
     {
@@ -253,7 +262,13 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
         game_framebuffer.height =
             g_offscreen_framebuffer.bitmap_info_header.biHeight * -1;
 
-        game_render(&game_framebuffer, &game_input);
+        game_memory_allocator_t game_memory_allocator = {0};
+        game_memory_allocator.permanent_memory_size =
+            memory_allocator.permanent_memory_size;
+        game_memory_allocator.permanent_memory =
+            memory_allocator.permanent_memory;
+
+        game_render(&game_memory_allocator, &game_framebuffer, &game_input);
 
         win32_dimensions_t client_dimensions =
             get_dimensions_for_window(window_handle);

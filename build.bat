@@ -5,7 +5,7 @@ REM The first script argument can be : (a) open_debugger or (b) empty (for compi
 
 mkdir build
 pushd build
-cl /Fe"main.exe" /Zi ../src/platform/win32_main.c /link /SUBSYSTEM:windows user32.lib gdi32.lib 
+cl /TC /Fe"main.exe" /Zi ../src/platform/win32_main.c /link /SUBSYSTEM:windows user32.lib gdi32.lib 
 popd
 
 IF %1.==. GOTO end

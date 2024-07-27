@@ -36,7 +36,23 @@ typedef struct
     game_keyboard_state_t keyboard_state;
 } game_input_t;
 
-internal void game_render(game_framebuffer_t *game_framebuffer,
+typedef struct
+{
+    u64 permanent_memory_size;
+    u8 *permanent_memory;
+} game_memory_allocator_t;
+
+// note(rtarun9) : Game state will be stored *in* the permanent section of game
+// memory.
+typedef struct
+{
+    f32 blue_offset;
+    f32 green_offset;
+    b8 is_initialized;
+} game_state_t;
+
+internal void game_render(game_memory_allocator_t *game_memory_allocator,
+                          game_framebuffer_t *game_framebuffer,
                           game_input_t *game_input);
 
 #endif

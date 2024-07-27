@@ -24,4 +24,11 @@ typedef double f64;
 #define global_variable static
 #define local_persist static
 
+// #defines that are related to memory.
+// note(rtarun9) : Does it make sense to have these macros in types.h?
+#define KILOBYTE(x) (x * 1024LL)
+#define MEGABYTE(x) (KILOBYTE(x) * 1024LL)
+#define GIGABYTE(x) (MEGABYTE(x) * 1024LL)
+#define TERABYTE(x) (GIGABYTE(x) * 1024LL)
+
 #endif
