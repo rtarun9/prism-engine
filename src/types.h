@@ -31,4 +31,18 @@ typedef double f64;
 #define GIGABYTE(x) (MEGABYTE(x) * 1024LL)
 #define TERABYTE(x) (GIGABYTE(x) * 1024LL)
 
+// #defines that are related to assets.
+#ifdef PRISM_DEBUG
+#define ASSERT(x)                                                              \
+    if (!(x))                                                                  \
+    {                                                                          \
+        int *null_ptr = NULL;                                                  \
+        *null_ptr = 0;                                                         \
+    }
+#endif
+
+#ifndef PRISM_DEBUG
+#define ASSERT(x)
+#endif
+
 #endif

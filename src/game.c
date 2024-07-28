@@ -4,7 +4,12 @@ void game_render(game_memory_allocator_t *restrict game_memory_allocator,
                  game_framebuffer_t *restrict game_framebuffer,
                  game_input_t *restrict game_input)
 {
-    game_state_t *game_state = (game_state_t *)(game_memory_allocator);
+    ASSERT(game_framebuffer->backbuffer_memory != NULL);
+    ASSERT(game_memory_allocator->permanent_memory != NULL);
+    ASSERT(sizeof(game_state_t) < game_memory_allocator->permanent_memory_size)
+
+    game_state_t *game_state =
+        (game_state_t *)(game_memory_allocator->permanent_memory);
 
     if (!game_state->is_initialized)
     {

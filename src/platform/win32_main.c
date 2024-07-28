@@ -1,6 +1,6 @@
-#include "../game.c"
-
 #include "win32_main.h"
+
+#include "../game.c"
 
 internal game_key_state_t
 get_game_key_state(win32_keyboard_state_t *restrict current_keyboard_state,
@@ -53,6 +53,7 @@ internal void win32_resize_bitmap(const i32 width, const i32 height)
     g_offscreen_framebuffer.backbuffer_memory =
         VirtualAlloc(NULL, backbuffer_size_in_bytes, MEM_COMMIT | MEM_RESERVE,
                      PAGE_READWRITE);
+    ASSERT(g_offscreen_framebuffer.backbuffer_memory != NULL);
 
     // Setup the bitmap info struct
 
@@ -219,6 +220,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
     memory_allocator.permanent_memory =
         VirtualAlloc(NULL, memory_allocator.permanent_memory_size,
                      MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    ASSERT(memory_allocator.permanent_memory != NULL);
 
     // Main game loop.
     while (1)
@@ -338,6 +340,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
     }
 
     ReleaseDC(window_handle, window_device_context);
+    VirtualFree(memory_allocator.permanent_memory, 0, MEM_RELEASE);
 
     return 0;
 }
