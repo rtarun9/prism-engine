@@ -1,5 +1,5 @@
-#ifndef __TYPES__H__
-#define __TYPES__H__
+#ifndef __COMMON__H__
+#define __COMMON__H__
 
 #include <stdint.h>
 
@@ -20,12 +20,13 @@ typedef float f32;
 typedef double f64;
 
 // #defines for the static keyword for explicitness.
+// Since a unity build is used, marking the functions as static will let the
+// compiler know that no external linkage is required.
 #define internal static
 #define global_variable static
 #define local_persist static
 
 // #defines that are related to memory.
-// note(rtarun9) : Does it make sense to have these macros in types.h?
 #define KILOBYTE(x) (x * 1024LL)
 #define MEGABYTE(x) (KILOBYTE(x) * 1024LL)
 #define GIGABYTE(x) (MEGABYTE(x) * 1024LL)

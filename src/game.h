@@ -1,10 +1,10 @@
 #ifndef __GAME_H__
 #define __GAME_H__
 
-// All platform - independant game related code is present here.
+// All platform - independent game related code is present here.
 // These functions will be called via the platform layer specific X_main.c
 // code.
-#include "types.h"
+#include "common.h"
 
 typedef struct
 {
@@ -54,5 +54,24 @@ typedef struct
 internal void game_render(game_memory_allocator_t *game_memory_allocator,
                           game_framebuffer_t *game_framebuffer,
                           game_input_t *game_input);
+
+// Services / interfaces provided by the platform layer to the game.
+typedef struct
+{
+    u8 *file_content_buffer;
+    u64 file_content_size;
+} platform_file_read_result_t;
+
+internal platform_file_read_result_t
+platform_read_entire_file(const char *file_path);
+
+// note(rtarun9) : Return a file handle instead? Does it really make sense to
+// have the function name as 'close file' but take as input the file content
+// buffer?
+internal void platform_close_file(u8 *file_content_buffer);
+
+internal void platform_write_to_file(const char *file_path,
+                                     u8 *file_content_buffer,
+                                     u64 file_content_size);
 
 #endif

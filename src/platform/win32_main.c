@@ -1,24 +1,8 @@
 #include "win32_main.h"
 
 #include "../game.c"
-
-internal game_key_state_t
-get_game_key_state(win32_keyboard_state_t *restrict current_keyboard_state,
-                   win32_keyboard_state_t *restrict previous_keyboard_state,
-                   unsigned char virtual_keycode)
-
-{
-    b8 is_key_down = current_keyboard_state->key_states[virtual_keycode] & 0x80;
-
-    b8 was_key_down =
-        previous_keyboard_state->key_states[virtual_keycode] & 0x80;
-
-    game_key_state_t key_state = {0};
-    key_state.is_key_down = is_key_down;
-    key_state.state_changed = is_key_down != was_key_down;
-
-    return key_state;
-}
+#include <fileapi.h>
+#include <handleapi.h>
 
 // Explanation of the rendering logic:
 // The engine allocates memory for its own bitmap and renders into it. GDI's
@@ -89,6 +73,24 @@ internal void win32_update_backbuffer(const HDC device_context,
                   &bitmap_info, DIB_RGB_COLORS, SRCCOPY);
 }
 
+internal game_key_state_t
+get_game_key_state(win32_keyboard_state_t *restrict current_keyboard_state,
+                   win32_keyboard_state_t *restrict previous_keyboard_state,
+                   unsigned char virtual_keycode)
+
+{
+    b8 is_key_down = current_keyboard_state->key_states[virtual_keycode] & 0x80;
+
+    b8 was_key_down =
+        previous_keyboard_state->key_states[virtual_keycode] & 0x80;
+
+    game_key_state_t key_state = {0};
+    key_state.is_key_down = is_key_down;
+    key_state.state_changed = is_key_down != was_key_down;
+
+    return key_state;
+}
+
 LRESULT CALLBACK win32_window_proc(HWND window_handle, UINT message,
                                    WPARAM wparam, LPARAM lparam)
 {
@@ -143,20 +145,101 @@ LRESULT CALLBACK win32_window_proc(HWND window_handle, UINT message,
     return 0;
 }
 
+// Services / platform provided by the platform layer to the game.
+internal platform_file_read_result_t
+platform_read_entire_file(const char *file_path)
+{
+    platform_file_read_result_t file_read_result = {0};
+
+    HANDLE file_handle =
+        CreateFileA(file_path, GENERIC_READ, 0, NULL, OPEN_EXISTING,
+                    FILE_ATTRIBUTE_NORMAL, NULL);
+    if (file_handle != INVALID_HANDLE_VALUE)
+    {
+        LARGE_INTEGER file_size = {0};
+        if (GetFileSizeEx(file_handle, &file_size))
+        {
+            // Once we have the file size, allocate enough memory so file
+            // contents can be moved to the buffer.
+
+            file_read_result.file_content_buffer =
+                VirtualAlloc(NULL, file_size.QuadPart, MEM_COMMIT | MEM_RESERVE,
+                             PAGE_READWRITE);
+            u32 number_of_bytes_read_from_file = 0;
+            if (ReadFile(file_handle, file_read_result.file_content_buffer,
+                         file_size.QuadPart,
+                         (LPDWORD)&number_of_bytes_read_from_file, NULL) &&
+                number_of_bytes_read_from_file == file_size.QuadPart)
+            {
+                // File was read succesfully.
+                file_read_result.file_content_size =
+                    number_of_bytes_read_from_file;
+            }
+            else
+            {
+                // Failed to read from file.
+                // Free the allocated memory immediately.
+                VirtualFree(file_read_result.file_content_buffer, 0,
+                            MEM_RELEASE);
+            }
+        }
+        else
+        {
+            // Failed to get file size.
+        }
+    }
+    else
+    {
+        // Could not open the file.
+    }
+
+    return file_read_result;
+}
+
+internal void platform_close_file(u8 *file_content_buffer)
+{
+    VirtualFree(file_content_buffer, 0, MEM_RELEASE);
+}
+
+internal void platform_write_to_file(const char *file_path,
+                                     u8 *file_content_buffer,
+                                     u64 file_content_size)
+{
+    HANDLE file_handle =
+        CreateFileA(file_path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
+                    FILE_ATTRIBUTE_NORMAL, NULL);
+    if (file_handle != INVALID_HANDLE_VALUE)
+    {
+        u32 number_of_bytes_written = 0;
+        if (WriteFile(file_handle, file_content_buffer, file_content_size,
+                      (LPDWORD)&number_of_bytes_written, NULL) &&
+            (file_content_size == number_of_bytes_written))
+        {
+            // Succesfully wrote to file!
+        }
+        else
+        {
+        }
+    }
+    else
+    {
+    }
+}
+
 int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
                    LPSTR command_line, int show_command)
 {
-    // Get the number of increments / counts the high performance counter does
-    // in a single second. According to MSDN, the high perf counter has
+    // Get the number of increments / counts the high performance counter
+    // does in a single second. According to MSDN, the high perf counter has
     // granularity in the < 1 micro second space. The number of counter
-    // increments per second is fixed, and can be fetched at application startup
-    // alone.
+    // increments per second is fixed, and can be fetched at application
+    // startup alone.
     LARGE_INTEGER counts_per_second = {0};
     QueryPerformanceFrequency(&counts_per_second);
 
-    // Create the window class, which defines a set of behaviours that multiple
-    // windows might have in common. Since CS_OWNDC is used, the device context
-    // can be fetched once and reused multiple times.
+    // Create the window class, which defines a set of behaviours that
+    // multiple windows might have in common. Since CS_OWNDC is used, the
+    // device context can be fetched once and reused multiple times.
     WNDCLASSA window_class = {0};
     window_class.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
     window_class.lpfnWndProc = win32_window_proc;
@@ -186,26 +269,27 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
     win32_resize_bitmap(1080, 720);
 
     // In the main loop, the counter is queried only once, at the end of the
-    // frame. This is to ensure that nothing is missed between the end of loop,
-    // and the start (and by doing so there is only one query performance
-    // counter function call per loop iteration).
+    // frame. This is to ensure that nothing is missed between the end of
+    // loop, and the start (and by doing so there is only one query
+    // performance counter function call per loop iteration).
     LARGE_INTEGER end_counter = {0};
     QueryPerformanceCounter(&end_counter);
 
-    // RDTSC stands for read timestamp counter. Each processes will have a time
-    // stamp counter, which basically increments after each clock cycle. The
-    // __rdtsc call is a actually not a function call, but a intrinsic, which
-    // tells the compiler to insert a assembly language call in place of the
-    // function definition. For example, when the dis-assembly is examined, the
-    // rdtsc x86 call is inserted rather than a function call. This can cause
-    // some problems when instruction reordering happens, since the asm call may
-    // not be reordered.
+    // RDTSC stands for read timestamp counter. Each processes will have a
+    // time stamp counter, which basically increments after each clock
+    // cycle. The
+    // __rdtsc call is a actually not a function call, but a intrinsic,
+    // which tells the compiler to insert a assembly language call in place
+    // of the function definition. For example, when the dis-assembly is
+    // examined, the rdtsc x86 call is inserted rather than a function call.
+    // This can cause some problems when instruction reordering happens,
+    // since the asm call may not be reordered.
     u64 end_timestamp_counter = __rdtsc();
 
     // Some explanation for the input module :
-    // To determine if a key state has changed, the platform layer will store 2
-    // copies of input data structures, which are swapped each frame . Finding
-    // state change becomes trivial in this case.
+    // To determine if a key state has changed, the platform layer will
+    // store 2 copies of input data structures, which are swapped each frame
+    // . Finding state change becomes trivial in this case.
     win32_keyboard_state_t current_keyboard_state = {0};
     win32_keyboard_state_t previous_keyboard_state = {0};
 
@@ -296,10 +380,9 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
             char counter_difference_str[256];
             wsprintf(
                 counter_difference_str,
-                "Blit (update_backbuffer function) Counter Difference : %d, MS "
-                "Per Frame : %d\n",
-                (i32)counter_difference, (i32)ms_per_frame);
-            OutputDebugStringA(counter_difference_str);
+                "Blit (update_backbuffer function) Counter Difference : %d,
+            MS " "Per Frame : %d\n", (i32)counter_difference,
+            (i32)ms_per_frame); OutputDebugStringA(counter_difference_str);
             */
         }
 
@@ -324,10 +407,9 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
         /*
         char counter_difference_str[256];
         wsprintf(counter_difference_str,
-                 "Counter Difference : %d, MS Per Frame : %d, FPS : %d, RDTSC "
-                 "Difference : %d\n",
-                 (i32)counter_difference, (i32)ms_per_frame, (i32)fps,
-                 (i32)timestamp_difference);
+                 "Counter Difference : %d, MS Per Frame : %d, FPS : %d,
+        RDTSC " "Difference : %d\n", (i32)counter_difference,
+        (i32)ms_per_frame, (i32)fps, (i32)timestamp_difference);
         OutputDebugStringA(counter_difference_str);
         */
 

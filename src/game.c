@@ -4,8 +4,10 @@ void game_render(game_memory_allocator_t *restrict game_memory_allocator,
                  game_framebuffer_t *restrict game_framebuffer,
                  game_input_t *restrict game_input)
 {
+    ASSERT(game_input != NULL);
     ASSERT(game_framebuffer->backbuffer_memory != NULL);
     ASSERT(game_memory_allocator->permanent_memory != NULL);
+
     ASSERT(sizeof(game_state_t) < game_memory_allocator->permanent_memory_size)
 
     game_state_t *game_state =
@@ -16,6 +18,12 @@ void game_render(game_memory_allocator_t *restrict game_memory_allocator,
         game_state->blue_offset = 0.0f;
         game_state->green_offset = 0.0f;
         game_state->is_initialized = 1;
+
+        platform_file_read_result_t file_read_result =
+            platform_read_entire_file(__FILE__);
+        platform_write_to_file("temp.txt", file_read_result.file_content_buffer,
+                               file_read_result.file_content_size);
+        platform_close_file(file_read_result.file_content_buffer);
     }
 
     game_state->blue_offset +=

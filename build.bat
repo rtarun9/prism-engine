@@ -1,7 +1,7 @@
 REM @echo off
 call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat" x64
 
-REM The first script argument can be : (a) open_debugger or (b) empty (for compilation only) or (c) run
+REM The first script argument can be : (a) open_debugger or (b) no arguments (for compilation only) or (c) run
 
 mkdir build
 pushd build

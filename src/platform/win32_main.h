@@ -1,10 +1,10 @@
-#ifndef __WIN32_TYPES_H__
-#define __WIN32_TYPES_H__
+#ifndef __WIN32_MAIN_H__
+#define __WIN32_MAIN_H__
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
-#include "../types.h"
+#include "../common.h"
 
 // note(rtarun9) : The biHeight parameter in bitmap_info_header is negative (so
 // that the top left corner is the origin).
