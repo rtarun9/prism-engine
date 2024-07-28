@@ -32,7 +32,8 @@ typedef struct
     u8 *permanent_memory;
 } win32_memory_allocator_t;
 
-internal win32_dimensions_t get_dimensions_for_window(const HWND window_handle);
+internal win32_dimensions_t
+win32_get_client_region_dimensions(const HWND window_handle);
 
 internal void win32_resize_bitmap(const i32 width, const i32 height);
 

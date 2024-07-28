@@ -46,8 +46,8 @@ void game_render(game_memory_allocator_t *restrict game_memory_allocator,
         {
             // Each pixel represents a RGBX value, which in memory is lied out
             // as: BB GG RR xx
-            u8 blue = x + game_state->blue_offset;
-            u8 green = y + game_state->green_offset;
+            u8 blue = (u8)(x + game_state->blue_offset);
+            u8 green = (u8)(y + game_state->green_offset);
             *pixel++ = (green << 8) | blue;
         }
 

@@ -1,8 +1,9 @@
 #include "win32_main.h"
 
+#include <stdio.h>
+#include <timeapi.h>
+
 #include "../game.c"
-#include <fileapi.h>
-#include <handleapi.h>
 
 // Explanation of the rendering logic:
 // The engine allocates memory for its own bitmap and renders into it. GDI's
@@ -12,7 +13,8 @@
 
 global_variable win32_offscreen_framebuffer_t g_offscreen_framebuffer;
 
-internal win32_dimensions_t get_dimensions_for_window(const HWND window_handle)
+internal win32_dimensions_t
+win32_get_client_region_dimensions(const HWND window_handle)
 {
     RECT client_rect = {0};
     GetClientRect(window_handle, &client_rect);
@@ -51,12 +53,6 @@ internal void win32_resize_bitmap(const i32 width, const i32 height)
     g_offscreen_framebuffer.bitmap_info_header.biBitCount = 32;
     g_offscreen_framebuffer.bitmap_info_header.biCompression = BI_RGB;
     g_offscreen_framebuffer.bitmap_info_header.biSizeImage = 0;
-
-    game_framebuffer_t game_framebuffer = {0};
-    game_framebuffer.backbuffer_memory =
-        g_offscreen_framebuffer.backbuffer_memory;
-    game_framebuffer.width = width;
-    game_framebuffer.height = height;
 }
 
 internal void win32_update_backbuffer(const HDC device_context,
@@ -71,6 +67,31 @@ internal void win32_update_backbuffer(const HDC device_context,
                   g_offscreen_framebuffer.bitmap_info_header.biHeight * -1,
                   (void *)g_offscreen_framebuffer.backbuffer_memory,
                   &bitmap_info, DIB_RGB_COLORS, SRCCOPY);
+}
+
+internal u64 win32_query_perf_frequency()
+{
+    LARGE_INTEGER frequency_value = {0};
+    QueryPerformanceFrequency(&frequency_value);
+
+    return frequency_value.QuadPart;
+}
+
+internal u64 win32_query_perf_counter()
+{
+    LARGE_INTEGER counter_value = {0};
+    QueryPerformanceCounter(&counter_value);
+
+    return counter_value.QuadPart;
+}
+
+internal f32 win32_get_seconds_elapsed(u64 performance_frequency,
+                                       u64 start_counter_value,
+                                       u64 end_counter_value)
+{
+    f32 seconds_elapsed = (f32)(end_counter_value - start_counter_value) /
+                          (f32)performance_frequency;
+    return seconds_elapsed;
 }
 
 internal game_key_state_t
@@ -89,60 +110,6 @@ get_game_key_state(win32_keyboard_state_t *restrict current_keyboard_state,
     key_state.state_changed = is_key_down != was_key_down;
 
     return key_state;
-}
-
-LRESULT CALLBACK win32_window_proc(HWND window_handle, UINT message,
-                                   WPARAM wparam, LPARAM lparam)
-{
-    switch (message)
-    {
-        // WM_CLOSE is called when the window is closed (shortcut key or the X
-        // button).
-    case WM_CLOSE: {
-        DestroyWindow(window_handle);
-    }
-    break;
-
-    // Posted when DestroyWindow is called.
-    case WM_DESTROY: {
-        PostQuitMessage(0);
-    }
-    break;
-
-    case WM_PAINT: {
-        PAINTSTRUCT ps = {};
-
-        win32_dimensions_t client_dimensions =
-            get_dimensions_for_window(window_handle);
-        HDC handle_to_device_context = BeginPaint(window_handle, &ps);
-        win32_update_backbuffer(handle_to_device_context,
-                                client_dimensions.width,
-                                client_dimensions.height);
-
-        EndPaint(window_handle, &ps);
-    }
-    break;
-
-    case WM_KEYDOWN:
-    case WM_KEYUP: {
-        // note(rtarun9) : the 31st bit of lparam is 0 for WM_KEYDOWN and 1 for
-        // WM_KEYUP
-        const b8 is_key_down = (lparam & (1 << 31)) == 0;
-
-        if (is_key_down && wparam == VK_ESCAPE)
-        {
-            DestroyWindow(window_handle);
-        }
-    }
-    break;
-
-    default: {
-        return DefWindowProc(window_handle, message, wparam, lparam);
-    }
-    break;
-    }
-
-    return 0;
 }
 
 // Services / platform provided by the platform layer to the game.
@@ -167,7 +134,7 @@ platform_read_entire_file(const char *file_path)
                              PAGE_READWRITE);
             u32 number_of_bytes_read_from_file = 0;
             if (ReadFile(file_handle, file_read_result.file_content_buffer,
-                         file_size.QuadPart,
+                         (u32)file_size.QuadPart,
                          (LPDWORD)&number_of_bytes_read_from_file, NULL) &&
                 number_of_bytes_read_from_file == file_size.QuadPart)
             {
@@ -187,6 +154,8 @@ platform_read_entire_file(const char *file_path)
         {
             // Failed to get file size.
         }
+
+        CloseHandle(file_handle);
     }
     else
     {
@@ -205,13 +174,15 @@ internal void platform_write_to_file(const char *file_path,
                                      u8 *file_content_buffer,
                                      u64 file_content_size)
 {
+    ASSERT(file_content_size != 0);
+
     HANDLE file_handle =
         CreateFileA(file_path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
                     FILE_ATTRIBUTE_NORMAL, NULL);
     if (file_handle != INVALID_HANDLE_VALUE)
     {
         u32 number_of_bytes_written = 0;
-        if (WriteFile(file_handle, file_content_buffer, file_content_size,
+        if (WriteFile(file_handle, file_content_buffer, (u32)file_content_size,
                       (LPDWORD)&number_of_bytes_written, NULL) &&
             (file_content_size == number_of_bytes_written))
         {
@@ -224,18 +195,34 @@ internal void platform_write_to_file(const char *file_path,
     else
     {
     }
+
+    CloseHandle(file_handle);
 }
+
+LRESULT CALLBACK win32_window_proc(HWND window_handle, UINT message,
+                                   WPARAM wparam, LPARAM lparam);
 
 int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
                    LPSTR command_line, int show_command)
 {
+    // Set the windows schedular granularity level.
+    const u32 windows_schedular_granularity_level = 1u;
+    b8 is_schedular_granularity_per_ms =
+        (b8)(timeBeginPeriod(windows_schedular_granularity_level) ==
+             TIMERR_NOERROR);
+
+    // note(rtarun9) : Is there some windows function to get the actual monitor
+    // refresh rate rather than just assuming it to be 60?
+    const u64 monitor_refresh_rate = 60;
+    const u64 game_update_hz = monitor_refresh_rate;
+    const f32 target_seconds_per_frame = 1.0f / game_update_hz;
+
     // Get the number of increments / counts the high performance counter
     // does in a single second. According to MSDN, the high perf counter has
     // granularity in the < 1 micro second space. The number of counter
     // increments per second is fixed, and can be fetched at application
     // startup alone.
-    LARGE_INTEGER counts_per_second = {0};
-    QueryPerformanceFrequency(&counts_per_second);
+    u64 perf_counter_frequency = win32_query_perf_frequency();
 
     // Create the window class, which defines a set of behaviours that
     // multiple windows might have in common. Since CS_OWNDC is used, the
@@ -268,13 +255,6 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
 
     win32_resize_bitmap(1080, 720);
 
-    // In the main loop, the counter is queried only once, at the end of the
-    // frame. This is to ensure that nothing is missed between the end of
-    // loop, and the start (and by doing so there is only one query
-    // performance counter function call per loop iteration).
-    LARGE_INTEGER end_counter = {0};
-    QueryPerformanceCounter(&end_counter);
-
     // RDTSC stands for read timestamp counter. Each processes will have a
     // time stamp counter, which basically increments after each clock
     // cycle. The
@@ -305,6 +285,22 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
         VirtualAlloc(NULL, memory_allocator.permanent_memory_size,
                      MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     ASSERT(memory_allocator.permanent_memory != NULL);
+
+    // Find the ms it takes to update the backbuffer.
+    // note(rtarun9) : This will wary each time the window is resized!!!
+    // This is added only for testing purposes.
+    win32_dimensions_t initial_client_dimensions =
+        win32_get_client_region_dimensions(window_handle);
+
+    u64 backbuffer_update_start_time = win32_query_perf_counter();
+    win32_update_backbuffer(window_device_context,
+                            initial_client_dimensions.width,
+                            initial_client_dimensions.height);
+    f32 backbuffer_update_time_seconds = (win32_get_seconds_elapsed(
+        perf_counter_frequency, backbuffer_update_start_time,
+        win32_query_perf_counter()));
+
+    u64 last_counter_value = win32_query_perf_counter();
 
     // Main game loop.
     while (1)
@@ -357,61 +353,37 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
         game_render(&game_memory_allocator, &game_framebuffer, &game_input);
 
         win32_dimensions_t client_dimensions =
-            get_dimensions_for_window(window_handle);
+            win32_get_client_region_dimensions(window_handle);
 
+        // Sleep so that we can display the rendered frame as close as possible
+        // to the boundary of the vertical blank.
+        u64 counter_value_after_update_and_render = win32_query_perf_counter();
+
+        f32 seconds_elapsed_for_processing_frame = win32_get_seconds_elapsed(
+            perf_counter_frequency, last_counter_value,
+            counter_value_after_update_and_render);
+
+        if (is_schedular_granularity_per_ms)
         {
-            // Find out how long updating the backbuffer takes.
-            LARGE_INTEGER blit_start_counter = {};
-            QueryPerformanceCounter(&blit_start_counter);
-
-            win32_update_backbuffer(window_device_context,
-                                    client_dimensions.width,
-                                    client_dimensions.height);
-
-            LARGE_INTEGER blit_end_counter = {};
-            QueryPerformanceCounter(&blit_end_counter);
-
-            i64 counter_difference =
-                blit_end_counter.QuadPart - blit_start_counter.QuadPart;
-            i64 ms_per_frame =
-                (1000 * counter_difference) / counts_per_second.QuadPart;
-
-            /*
-            char counter_difference_str[256];
-            wsprintf(
-                counter_difference_str,
-                "Blit (update_backbuffer function) Counter Difference : %d,
-            MS " "Per Frame : %d\n", (i32)counter_difference,
-            (i32)ms_per_frame); OutputDebugStringA(counter_difference_str);
-            */
+            if (seconds_elapsed_for_processing_frame +
+                    backbuffer_update_time_seconds <
+                target_seconds_per_frame)
+            {
+                DWORD ms_to_sleep_for =
+                    (DWORD)((target_seconds_per_frame -
+                             seconds_elapsed_for_processing_frame -
+                             backbuffer_update_time_seconds) *
+                            1000.0f);
+                Sleep(ms_to_sleep_for);
+            }
+        }
+        else
+        {
+            // note(rtarun9) : SPIN LOCK?
         }
 
-        LARGE_INTEGER current_counter = {0};
-        QueryPerformanceCounter(&current_counter);
-
-        i64 counter_difference =
-            current_counter.QuadPart - end_counter.QuadPart;
-
-        end_counter = current_counter;
-
-        u64 current_timestamp_counter = __rdtsc();
-        u64 timestamp_difference =
-            current_timestamp_counter - end_timestamp_counter;
-
-        end_timestamp_counter = current_timestamp_counter;
-
-        i64 ms_per_frame =
-            (1000 * counter_difference) / counts_per_second.QuadPart;
-        i64 fps = counts_per_second.QuadPart / counter_difference;
-
-        /*
-        char counter_difference_str[256];
-        wsprintf(counter_difference_str,
-                 "Counter Difference : %d, MS Per Frame : %d, FPS : %d,
-        RDTSC " "Difference : %d\n", (i32)counter_difference,
-        (i32)ms_per_frame, (i32)fps, (i32)timestamp_difference);
-        OutputDebugStringA(counter_difference_str);
-        */
+        win32_update_backbuffer(window_device_context, client_dimensions.width,
+                                client_dimensions.height);
 
         // Swap keyboard states.
         {
@@ -419,10 +391,84 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
             current_keyboard_state_ptr = previous_keyboard_state_ptr;
             previous_keyboard_state_ptr = temp;
         }
+
+        u64 counter_value = win32_query_perf_counter();
+
+        f32 ms_per_frame =
+            win32_get_seconds_elapsed(perf_counter_frequency,
+                                      last_counter_value, counter_value) *
+            1000.0f;
+
+        char ms_per_frame_str_buffer[256];
+        sprintf_s(&ms_per_frame_str_buffer[0], 256, "MS Per Frame : %f \n",
+                  ms_per_frame);
+
+        OutputDebugStringA(ms_per_frame_str_buffer);
+        last_counter_value = counter_value;
+
+        u64 current_timestamp_counter = __rdtsc();
+        u64 timestamp_difference =
+            current_timestamp_counter - end_timestamp_counter;
+
+        end_timestamp_counter = current_timestamp_counter;
     }
 
     ReleaseDC(window_handle, window_device_context);
     VirtualFree(memory_allocator.permanent_memory, 0, MEM_RELEASE);
+
+    return 0;
+}
+
+LRESULT CALLBACK win32_window_proc(HWND window_handle, UINT message,
+                                   WPARAM wparam, LPARAM lparam)
+{
+    switch (message)
+    {
+        // WM_CLOSE is called when the window is closed (shortcut key or the X
+        // button).
+    case WM_CLOSE: {
+        DestroyWindow(window_handle);
+    }
+    break;
+
+    // Posted when DestroyWindow is called.
+    case WM_DESTROY: {
+        PostQuitMessage(0);
+    }
+    break;
+
+    case WM_PAINT: {
+        PAINTSTRUCT ps = {};
+
+        win32_dimensions_t client_dimensions =
+            win32_get_client_region_dimensions(window_handle);
+        HDC handle_to_device_context = BeginPaint(window_handle, &ps);
+        win32_update_backbuffer(handle_to_device_context,
+                                client_dimensions.width,
+                                client_dimensions.height);
+
+        EndPaint(window_handle, &ps);
+    }
+    break;
+
+    case WM_KEYDOWN:
+    case WM_KEYUP: {
+        // note(rtarun9) : the 31st bit of lparam is 0 for WM_KEYDOWN and 1 for
+        // WM_KEYUP
+        const b8 is_key_down = (lparam & (1 << 31)) == 0;
+
+        if (is_key_down && wparam == VK_ESCAPE)
+        {
+            DestroyWindow(window_handle);
+        }
+    }
+    break;
+
+    default: {
+        return DefWindowProc(window_handle, message, wparam, lparam);
+    }
+    break;
+    }
 
     return 0;
 }
