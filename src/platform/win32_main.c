@@ -1,11 +1,10 @@
 #include "win32_main.h"
 
+#include <libloaderapi.h>
 #include <stdio.h>
 #include <timeapi.h>
 
-#include "../game.c"
-
-// Explanation of the rendering logic:
+// NOTE: Explanation of the rendering logic:
 // The engine allocates memory for its own bitmap and renders into it. GDI's
 // (graphics device interface) role is to simply 'Blit' or copy the rendered
 // bitmap into the actual device context.
@@ -27,6 +26,9 @@ win32_get_client_region_dimensions(const HWND window_handle)
 }
 
 // Function to create / resize the bitmap info header and memory for backbuffer.
+// NOTE: For now, the bitmap does not change its dimensions if the client region
+// is resized. This is because stretch DIBits will take care of situations where
+// source and destination dimensions (for blitting) is different.
 internal void win32_resize_bitmap(const i32 width, const i32 height)
 {
     if (g_offscreen_framebuffer.backbuffer_memory)
@@ -43,7 +45,7 @@ internal void win32_resize_bitmap(const i32 width, const i32 height)
 
     // Setup the bitmap info struct
 
-    // note(rtarun9) : the negative height, this is to ensure that the bitmap is
+    // NOTE: the negative height, this is to ensure that the bitmap is
     // a top down DIB.
     g_offscreen_framebuffer.bitmap_info_header.biSize =
         sizeof(BITMAPINFOHEADER);
@@ -199,6 +201,38 @@ internal void platform_write_to_file(const char *file_path,
     CloseHandle(file_handle);
 }
 
+// TODO: Add the stub for game render (which will be used in case the actual
+// function cannot be located / found in the dll.
+internal game_code_t win32_load_game_dll()
+{
+    game_code_t game_code = {0};
+
+    game_code.game_dll_module = LoadLibraryA("game.dll");
+    if (game_code.game_dll_module)
+    {
+        game_code.game_render = (game_render_t *)GetProcAddress(
+            game_code.game_dll_module, "game_render");
+    }
+    else
+    {
+        ASSERT(0);
+    }
+
+    return game_code;
+}
+
+internal void win32_unload_game_dll(game_code_t *game_code)
+{
+    if (game_code->game_dll_module)
+    {
+        FreeLibrary(game_code->game_dll_module);
+        game_code->game_dll_module = NULL;
+        game_code->game_render = NULL;
+    }
+}
+
+// void win32_unload_game_dll(game_code_t *game_code);
+
 LRESULT CALLBACK win32_window_proc(HWND window_handle, UINT message,
                                    WPARAM wparam, LPARAM lparam);
 
@@ -211,7 +245,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
         (b8)(timeBeginPeriod(windows_schedular_granularity_level) ==
              TIMERR_NOERROR);
 
-    // note(rtarun9) : Is there some windows function to get the actual monitor
+    // FIX: Is there some windows function to get the actual monitor
     // refresh rate rather than just assuming it to be 60?
     const u64 monitor_refresh_rate = 60;
     const u64 game_update_hz = monitor_refresh_rate;
@@ -287,20 +321,27 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
     ASSERT(memory_allocator.permanent_memory != NULL);
 
     // Find the ms it takes to update the backbuffer.
-    // note(rtarun9) : This will wary each time the window is resized!!!
-    // This is added only for testing purposes.
-    win32_dimensions_t initial_client_dimensions =
+    // NOTE: This will wary each time the window is resized!!!
+    // The fix for this is a bit hacky, but each time the window is resized the
+    // stretch dibits call is profiled and the backbuffer_update_time_seconds is
+    // updated.
+    win32_dimensions_t client_dimensions =
         win32_get_client_region_dimensions(window_handle);
 
     u64 backbuffer_update_start_time = win32_query_perf_counter();
-    win32_update_backbuffer(window_device_context,
-                            initial_client_dimensions.width,
-                            initial_client_dimensions.height);
+    win32_update_backbuffer(window_device_context, client_dimensions.width,
+                            client_dimensions.height);
     f32 backbuffer_update_time_seconds = (win32_get_seconds_elapsed(
         perf_counter_frequency, backbuffer_update_start_time,
         win32_query_perf_counter()));
 
     u64 last_counter_value = win32_query_perf_counter();
+
+    game_code_t game_code = win32_load_game_dll();
+    platform_services_t platform_services = {0};
+    platform_services.platform_read_entire_file = platform_read_entire_file;
+    platform_services.platform_close_file = platform_close_file;
+    platform_services.platform_write_to_file = platform_write_to_file;
 
     // Main game loop.
     while (1)
@@ -334,7 +375,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
         game_input.keyboard_state.key_d = get_game_key_state(
             current_keyboard_state_ptr, previous_keyboard_state_ptr, 'D');
 
-        // note(rtarun9) : Should rendering only be done when WM_PAINT is
+        // NOTE: Should rendering only be done when WM_PAINT is
         // called, or should it be called in the game loop always?
         game_framebuffer_t game_framebuffer = {0};
         game_framebuffer.backbuffer_memory =
@@ -350,9 +391,10 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
         game_memory_allocator.permanent_memory =
             memory_allocator.permanent_memory;
 
-        game_render(&game_memory_allocator, &game_framebuffer, &game_input);
+        game_code.game_render(&game_memory_allocator, &game_framebuffer,
+                              &game_input, &platform_services);
 
-        win32_dimensions_t client_dimensions =
+        win32_dimensions_t new_client_dimensions =
             win32_get_client_region_dimensions(window_handle);
 
         // Sleep so that we can display the rendered frame as close as possible
@@ -379,11 +421,31 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
         }
         else
         {
-            // note(rtarun9) : SPIN LOCK?
+            // TODO: SPIN LOCK?
         }
 
-        win32_update_backbuffer(window_device_context, client_dimensions.width,
-                                client_dimensions.height);
+        // Check if the new client dimensions match the previous one.
+        if (new_client_dimensions.width != client_dimensions.width ||
+            new_client_dimensions.height != client_dimensions.height)
+        {
+            const u64 start_backbuffer_update_counter =
+                win32_query_perf_counter();
+            win32_update_backbuffer(window_device_context,
+                                    new_client_dimensions.width,
+                                    new_client_dimensions.height);
+
+            backbuffer_update_time_seconds = win32_get_seconds_elapsed(
+                perf_counter_frequency, start_backbuffer_update_counter,
+                win32_query_perf_counter());
+
+            client_dimensions = new_client_dimensions;
+        }
+        else
+        {
+            win32_update_backbuffer(window_device_context,
+                                    new_client_dimensions.width,
+                                    new_client_dimensions.height);
+        }
 
         // Swap keyboard states.
         {
@@ -453,7 +515,7 @@ LRESULT CALLBACK win32_window_proc(HWND window_handle, UINT message,
 
     case WM_KEYDOWN:
     case WM_KEYUP: {
-        // note(rtarun9) : the 31st bit of lparam is 0 for WM_KEYDOWN and 1 for
+        // NOTE: the 31st bit of lparam is 0 for WM_KEYDOWN and 1 for
         // WM_KEYUP
         const b8 is_key_down = (lparam & (1 << 31)) == 0;
 

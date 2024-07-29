@@ -6,7 +6,9 @@
 
 #include "../common.h"
 
-// note(rtarun9) : The biHeight parameter in bitmap_info_header is negative (so
+#include "../game.h"
+
+// NOTE: The biHeight parameter in bitmap_info_header is negative (so
 // that the top left corner is the origin).
 typedef struct
 {
@@ -43,5 +45,19 @@ internal void win32_resize_bitmap(const i32 width, const i32 height);
 internal void win32_update_backbuffer(const HDC device_context,
                                       const i32 window_width,
                                       const i32 window_height);
+
+// NOTE: As the game code will be present in a DLL and will be loaded at run
+// time, the game func pointers (and DLL handle) will be encapsulated in its own
+// struct.
+typedef FUNC_GAME_RENDER(game_render_t);
+
+typedef struct
+{
+    HMODULE game_dll_module;
+    game_render_t *game_render;
+} game_code_t;
+
+internal game_code_t win32_load_game_dll();
+internal void win32_unload_game_dll(game_code_t *game_code);
 
 #endif
