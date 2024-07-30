@@ -51,13 +51,16 @@ internal void win32_update_backbuffer(const HDC device_context,
 // struct.
 typedef FUNC_GAME_RENDER(game_render_t);
 
+// NOTE: Each frame the platform layer will ccheck if the last modification time
+// has changed. If yes, the DLL is re-loaded.
 typedef struct
 {
     HMODULE game_dll_module;
+    FILETIME dll_last_modification_time;
     game_render_t *game_render;
 } game_code_t;
 
-internal game_code_t win32_load_game_dll();
+internal game_code_t win32_load_game_dll(const char *file_path);
 internal void win32_unload_game_dll(game_code_t *game_code);
 
 #endif

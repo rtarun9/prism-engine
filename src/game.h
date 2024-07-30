@@ -70,19 +70,19 @@ typedef struct
 // should the func pointers to platform services be included in that struct?
 
 #define FUNC_PLATFORM_READ_ENTIRE_FILE(name)                                   \
-    platform_file_read_result_t name(const char *file_path);
+    platform_file_read_result_t name(const char *file_path)
 typedef FUNC_PLATFORM_READ_ENTIRE_FILE(platform_read_entire_file_t);
 
 // FIX: Return a file handle instead? Does it really make sense to
 // have the function name as 'close file' but take as input the file content
 // buffer?
 
-#define FUNC_PLATFORM_CLOSE_FILE(name) void name(u8 *file_content_buffer);
+#define FUNC_PLATFORM_CLOSE_FILE(name) void name(u8 *file_content_buffer)
 typedef FUNC_PLATFORM_CLOSE_FILE(platform_close_file_t);
 
 #define FUNC_PLATFORM_WRITE_TO_FILE(name)                                      \
     void name(const char *file_path, u8 *file_content_buffer,                  \
-              u64 file_content_size);
+              u64 file_content_size)
 typedef FUNC_PLATFORM_WRITE_TO_FILE(platform_write_to_file_t);
 
 typedef struct
@@ -95,7 +95,7 @@ typedef struct
 #define FUNC_GAME_RENDER(name)                                                 \
     void name(game_memory_allocator_t *game_memory_allocator,                  \
               game_framebuffer_t *game_framebuffer, game_input_t *game_input,  \
-              platform_services_t *platform_services);
+              platform_services_t *platform_services)
 
 // Core game functions that will be called by the platform layer.
 // HACK: Not entire sure how I like this syntax... Better to keep the

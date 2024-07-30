@@ -1,5 +1,6 @@
 #include "win32_main.h"
 
+#include <fileapi.h>
 #include <libloaderapi.h>
 #include <stdio.h>
 #include <timeapi.h>
@@ -201,13 +202,17 @@ internal void platform_write_to_file(const char *file_path,
     CloseHandle(file_handle);
 }
 
-// TODO: Add the stub for game render (which will be used in case the actual
-// function cannot be located / found in the dll.
-internal game_code_t win32_load_game_dll()
+FUNC_GAME_RENDER(stub_game_render)
+{
+    return;
+}
+
+internal game_code_t win32_load_game_dll(const char *file_path)
 {
     game_code_t game_code = {0};
+    game_code.game_render = stub_game_render;
 
-    game_code.game_dll_module = LoadLibraryA("game.dll");
+    game_code.game_dll_module = LoadLibraryA(file_path);
     if (game_code.game_dll_module)
     {
         game_code.game_render = (game_render_t *)GetProcAddress(
@@ -227,11 +232,24 @@ internal void win32_unload_game_dll(game_code_t *game_code)
     {
         FreeLibrary(game_code->game_dll_module);
         game_code->game_dll_module = NULL;
-        game_code->game_render = NULL;
+        game_code->game_render = stub_game_render;
     }
 }
 
-// void win32_unload_game_dll(game_code_t *game_code);
+internal FILETIME get_last_time_file_was_modified(const char *file_path)
+{
+    FILETIME last_time_file_was_modified = {0};
+
+    WIN32_FIND_DATAA file_find_data = {0};
+    HANDLE dll_handle = FindFirstFileA(file_path, &file_find_data);
+    if (dll_handle != INVALID_HANDLE_VALUE)
+    {
+        last_time_file_was_modified = file_find_data.ftLastWriteTime;
+        FindClose(dll_handle);
+    }
+
+    return last_time_file_was_modified;
+}
 
 LRESULT CALLBACK win32_window_proc(HWND window_handle, UINT message,
                                    WPARAM wparam, LPARAM lparam);
@@ -337,7 +355,11 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
 
     u64 last_counter_value = win32_query_perf_counter();
 
-    game_code_t game_code = win32_load_game_dll();
+    game_code_t game_code = win32_load_game_dll("game.dll");
+    // Get the last time file was modified.
+    game_code.dll_last_modification_time =
+        get_last_time_file_was_modified("game.dll");
+
     platform_services_t platform_services = {0};
     platform_services.platform_read_entire_file = platform_read_entire_file;
     platform_services.platform_close_file = platform_close_file;
@@ -346,6 +368,17 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
     // Main game loop.
     while (1)
     {
+        // Check the last modified time of the DLL.
+        FILETIME dll_last_modified_time =
+            get_last_time_file_was_modified("game.dll");
+        if (CompareFileTime(&dll_last_modified_time,
+                            &game_code.dll_last_modification_time) != 0)
+        {
+            win32_unload_game_dll(&game_code);
+            win32_load_game_dll("game.dll");
+            game_code.dll_last_modification_time = dll_last_modified_time;
+        }
+
         MSG message = {};
         while (PeekMessageA(&message, NULL, 0, 0, PM_REMOVE))
         {

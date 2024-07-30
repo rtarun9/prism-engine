@@ -3,7 +3,8 @@
 __declspec(dllexport) void game_render(
     game_memory_allocator_t *restrict game_memory_allocator,
     game_framebuffer_t *restrict game_framebuffer,
-    game_input_t *restrict game_input, platform_services_t *platform_services)
+    game_input_t *restrict game_input,
+    platform_services_t *restrict platform_services)
 {
     ASSERT(game_input != NULL);
     ASSERT(game_framebuffer->backbuffer_memory != NULL);
