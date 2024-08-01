@@ -62,5 +62,6 @@ typedef struct
 
 internal game_code_t win32_load_game_dll(const char *file_path);
 internal void win32_unload_game_dll(game_code_t *game_code);
+internal FILETIME win32_get_last_time_file_was_modified(const char *file_path);
 
 #endif

@@ -31,8 +31,6 @@ set yyyy=%date:~6,8%
 set mm=%time:~3,2%
 set ss=%time:~6,2%
 
-REM del /Q game*.pdb
-
 set pdb_file_timestamp=game__%dd%_%mm%_%yyyy%_%mm%_%ss%
 cl /TC /DPRISM_DEBUG=1 /MT /nologo /WX /wd4100 /wd4189 /W4 /Od /Oi /Z7  /LD ../src/game.c /link /pdb:%pdb_file_timestamp%.pdb  
 popd

@@ -53,7 +53,7 @@ __declspec(dllexport) void game_render(
             // as: BB GG RR xx
             u8 blue = (u8)(x + game_state->blue_offset);
             u8 green = (u8)(y + game_state->green_offset);
-            *pixel++ = (green << 8) | blue;
+            *pixel++ = (green << 16) | blue;
         }
 
         row += row_stride;

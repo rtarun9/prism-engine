@@ -208,12 +208,15 @@ FUNC_GAME_RENDER(stub_game_render)
     return;
 }
 
+// NOTE: The last dll last write time is NOT set in this function. Do it before
+// this func is called!
 internal game_code_t win32_load_game_dll(const char *file_path)
 {
     // We cant use load library directly on file_path. This is because debuggers
     // (like VS) will lock the DLL, which means that we cannot recompile the DLL
     // again (with same name). The solution for now is to Copy the DLL, and use
     // the duplicate DLL in LoadLibrary.
+
     game_code_t game_code = {0};
     game_code.game_render = stub_game_render;
 
@@ -233,7 +236,7 @@ internal game_code_t win32_load_game_dll(const char *file_path)
     else
     {
         // Copy file should never fail!!
-        ASSERT(0);
+        // ASSERT(0);
     }
 
     return game_code;
@@ -249,7 +252,7 @@ internal void win32_unload_game_dll(game_code_t *game_code)
     }
 }
 
-internal FILETIME get_last_time_file_was_modified(const char *file_path)
+internal FILETIME win32_get_last_time_file_was_modified(const char *file_path)
 {
     FILETIME last_time_file_was_modified = {0};
 
@@ -259,6 +262,10 @@ internal FILETIME get_last_time_file_was_modified(const char *file_path)
     {
         last_time_file_was_modified = file_find_data.ftLastWriteTime;
         FindClose(dll_handle);
+    }
+    else
+    {
+        ASSERT(0);
     }
 
     return last_time_file_was_modified;
@@ -371,7 +378,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
     game_code_t game_code = win32_load_game_dll("game.dll");
     // Get the last time file was modified.
     game_code.dll_last_modification_time =
-        get_last_time_file_was_modified("game.dll");
+        win32_get_last_time_file_was_modified("game.dll");
 
     platform_services_t platform_services = {0};
     platform_services.platform_read_entire_file = platform_read_entire_file;
@@ -383,13 +390,18 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
     {
         // Check the last modified time of the DLL.
         FILETIME dll_last_modified_time =
-            get_last_time_file_was_modified("game.dll");
+            win32_get_last_time_file_was_modified("game.dll");
         if (CompareFileTime(&dll_last_modified_time,
                             &game_code.dll_last_modification_time) != 0)
         {
             win32_unload_game_dll(&game_code);
-            win32_load_game_dll("game.dll");
-            game_code.dll_last_modification_time = dll_last_modified_time;
+            game_code = win32_load_game_dll("game.dll");
+
+            game_code.dll_last_modification_time.dwLowDateTime =
+                dll_last_modified_time.dwLowDateTime;
+
+            game_code.dll_last_modification_time.dwHighDateTime =
+                dll_last_modified_time.dwHighDateTime;
         }
 
         MSG message = {};
