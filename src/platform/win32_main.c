@@ -4,6 +4,7 @@
 #include <libloaderapi.h>
 #include <stdio.h>
 #include <timeapi.h>
+#include <winbase.h>
 
 // NOTE: Explanation of the rendering logic:
 // The engine allocates memory for its own bitmap and renders into it. GDI's
@@ -209,17 +210,29 @@ FUNC_GAME_RENDER(stub_game_render)
 
 internal game_code_t win32_load_game_dll(const char *file_path)
 {
+    // We cant use load library directly on file_path. This is because debuggers
+    // (like VS) will lock the DLL, which means that we cannot recompile the DLL
+    // again (with same name). The solution for now is to Copy the DLL, and use
+    // the duplicate DLL in LoadLibrary.
     game_code_t game_code = {0};
     game_code.game_render = stub_game_render;
 
-    game_code.game_dll_module = LoadLibraryA(file_path);
-    if (game_code.game_dll_module)
+    if (CopyFile(file_path, "game_duplicate.dll", FALSE))
     {
-        game_code.game_render = (game_render_t *)GetProcAddress(
-            game_code.game_dll_module, "game_render");
+        game_code.game_dll_module = LoadLibraryA("game_duplicate.dll");
+        if (game_code.game_dll_module)
+        {
+            game_code.game_render = (game_render_t *)GetProcAddress(
+                game_code.game_dll_module, "game_render");
+        }
+        else
+        {
+            ASSERT(0);
+        }
     }
     else
     {
+        // Copy file should never fail!!
         ASSERT(0);
     }
 
