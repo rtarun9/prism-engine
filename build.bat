@@ -1,7 +1,7 @@
 @echo on 
 call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat" x64
 
-REM The first script argument can be : (a) open_debugger or (b) no arguments (for compilation only) or (c) run
+REM The first script argument can be : (a) open_debugger or (b) no arguments (for compilation only) (c) run
 
 REM explanation of all compiler flags used : 
 REM /TC -> Specifies all source files are C.
@@ -21,6 +21,7 @@ REM /PDB -> Give a custom name to the generated program database (PDB) file.
 mkdir build
 pushd build
 
+del *.pdb
 
 cl /TC /Fe"main.exe" /DPRISM_DEBUG=1 /MT /nologo /WX /wd4100 /wd4189 /W4 /Od /Oi /Z7  ../src/platform/win32_main.c /link /SUBSYSTEM:windows user32.lib gdi32.lib Winmm.lib
 

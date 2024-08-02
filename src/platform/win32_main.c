@@ -111,7 +111,12 @@ get_game_key_state(win32_keyboard_state_t *restrict current_keyboard_state,
 
     game_key_state_t key_state = {0};
     key_state.is_key_down = is_key_down;
-    key_state.state_changed = is_key_down != was_key_down;
+    key_state.state_changed = (is_key_down != was_key_down);
+
+    if (key_state.state_changed)
+    {
+        int x = 3;
+    }
 
     return key_state;
 }
@@ -418,7 +423,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
         }
 
         // Fill the keyboard state struct.
-        GetKeyboardState(&current_keyboard_state.key_states[0]);
+        GetKeyboardState(current_keyboard_state_ptr->key_states);
 
         game_input_t game_input = {0};
         game_input.keyboard_state.key_w = get_game_key_state(
@@ -432,6 +437,9 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
 
         game_input.keyboard_state.key_d = get_game_key_state(
             current_keyboard_state_ptr, previous_keyboard_state_ptr, 'D');
+
+        game_input.keyboard_state.key_space = get_game_key_state(
+            current_keyboard_state_ptr, previous_keyboard_state_ptr, VK_SPACE);
 
         // NOTE: Should rendering only be done when WM_PAINT is
         // called, or should it be called in the game loop always?

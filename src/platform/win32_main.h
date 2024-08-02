@@ -34,18 +34,6 @@ typedef struct
     u8 *permanent_memory;
 } win32_memory_allocator_t;
 
-internal win32_dimensions_t
-win32_get_client_region_dimensions(const HWND window_handle);
-
-internal void win32_resize_bitmap(const i32 width, const i32 height);
-
-// Update the backbuffer by blitting (and stretching the framebuffer if
-// required) to the device context of window.
-// This is done because the bitmap's dimensions is FIXED.
-internal void win32_update_backbuffer(const HDC device_context,
-                                      const i32 window_width,
-                                      const i32 window_height);
-
 // NOTE: As the game code will be present in a DLL and will be loaded at run
 // time, the game func pointers (and DLL handle) will be encapsulated in its own
 // struct.
@@ -59,9 +47,5 @@ typedef struct
     FILETIME dll_last_modification_time;
     game_render_t *game_render;
 } game_code_t;
-
-internal game_code_t win32_load_game_dll(const char *file_path);
-internal void win32_unload_game_dll(game_code_t *game_code);
-internal FILETIME win32_get_last_time_file_was_modified(const char *file_path);
 
 #endif
