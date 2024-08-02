@@ -116,7 +116,7 @@ __declspec(dllexport) void game_render(
         {
             u32 *pixel = ((u32 *)game_framebuffer->backbuffer_memory + x +
                           y * game_framebuffer->width);
-            *pixel = 0xFFFFFFFF;
+            *pixel = 0xFF00FFFF;
         }
     }
 }

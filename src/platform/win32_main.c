@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <timeapi.h>
 #include <winbase.h>
+#include <winuser.h>
 
 // NOTE: Explanation of the rendering logic:
 // The engine allocates memory for its own bitmap and renders into it. GDI's
@@ -208,7 +209,7 @@ internal void platform_write_to_file(const char *file_path,
     CloseHandle(file_handle);
 }
 
-FUNC_GAME_RENDER(stub_game_render)
+internal FUNC_GAME_RENDER(stub_game_render)
 {
     return;
 }
@@ -279,7 +280,8 @@ internal FILETIME win32_get_last_time_file_was_modified(const char *file_path)
 LRESULT CALLBACK win32_window_proc(HWND window_handle, UINT message,
                                    WPARAM wparam, LPARAM lparam);
 
-internal void win32_start_state_recording(win32_state_t *win32_state)
+internal void win32_start_state_recording(win32_state_t *win32_state,
+                                          u8 *game_permanent_memory)
 {
     // Open the file handle. KEEP it opened, so we can continuously write to
     // file and append data to it.
@@ -287,13 +289,8 @@ internal void win32_start_state_recording(win32_state_t *win32_state)
         CreateFileA("prism-state.sta", GENERIC_WRITE, 0, NULL, OPEN_ALWAYS,
                     FILE_ATTRIBUTE_NORMAL, NULL);
 
-    // Write the current game memory state as soon as recording starts. The game
-    // memory will NOT be recorded other than this time!
-
-    DWORD number_of_bytes_written = {0};
-    WriteFile(win32_state->input_recording_file_handle,
-              win32_state->game_memory, (DWORD)win32_state->game_memory_size,
-              &number_of_bytes_written, NULL);
+    CopyMemory(win32_state->game_memory, game_permanent_memory,
+               win32_state->game_memory_size);
 }
 
 internal void win32_record_state(win32_state_t *win32_state,
@@ -324,12 +321,10 @@ internal void win32_start_playback(win32_state_t *win32_state,
             CreateFileA("prism-state.sta", GENERIC_READ, 0, NULL, OPEN_ALWAYS,
                         FILE_ATTRIBUTE_NORMAL, NULL);
 
-        // When you start playback, read game memory as soon as playback starts.
-        DWORD number_of_bytes_read = {0};
-        ReadFile(win32_state->input_playback_file_handle,
-                 permanent_game_memory_pointer,
-                 (DWORD)win32_state->game_memory_size, &number_of_bytes_read,
-                 NULL);
+        // When you start playback, permanent game memory pointer is set to the
+        // win32 state pointer.
+        CopyMemory(permanent_game_memory_pointer, win32_state->game_memory,
+                   win32_state->game_memory_size);
     }
 
     // Read from file.
@@ -374,10 +369,10 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
     u64 perf_counter_frequency = win32_query_perf_frequency();
 
     // Create the window class, which defines a set of behaviours that
-    // multiple windows might have in common. Since CS_OWNDC is used, the
+    // multiple windows might have in common.
     // device context can be fetched once and reused multiple times.
     WNDCLASSA window_class = {0};
-    window_class.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
+    window_class.style = CS_HREDRAW | CS_VREDRAW;
     window_class.lpfnWndProc = win32_window_proc;
     window_class.cbClsExtra = 0;
     window_class.cbWndExtra = 0;
@@ -390,17 +385,16 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
     }
 
     // Create a window.
-    HWND window_handle = CreateWindowA(
-        "BaseWindowClass", "prism-engine", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT,
-        CW_USEDEFAULT, 1080, 720, NULL, NULL, instance, NULL);
+    HWND window_handle =
+        CreateWindowExA(WS_EX_TOPMOST | WS_EX_LAYERED, "BaseWindowClass",
+                        "prism-engine", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT,
+                        CW_USEDEFAULT, 1080, 720, NULL, NULL, instance, NULL);
     if (window_handle == NULL)
     {
         OutputDebugStringA("Failed to create window.");
     }
 
-    HDC window_device_context = GetDC(window_handle);
-
-    ShowWindow(window_handle, SW_SHOWNORMAL);
+    ShowWindow(window_handle, SW_SHOW);
 
     win32_resize_bitmap(1080, 720);
 
@@ -415,6 +409,14 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
     // since the asm call may not be reordered.
     u64 end_timestamp_counter = __rdtsc();
 
+    // Allocate memory upfront.
+    win32_memory_allocator_t memory_allocator = {0};
+    memory_allocator.permanent_memory_size = MEGABYTE(128u);
+    memory_allocator.permanent_memory =
+        VirtualAlloc(NULL, memory_allocator.permanent_memory_size,
+                     MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    ASSERT(memory_allocator.permanent_memory != NULL);
+
     // Some explanation for the input module :
     // To determine if a key state has changed, the platform layer will
     // store 2 copies of input data structures, which are swapped each frame
@@ -427,18 +429,12 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
     win32_keyboard_state_t *previous_keyboard_state_ptr =
         &previous_keyboard_state;
 
+    // Setup the win32 state and allocate memory for the game permanent pointer.
     win32_state_t win32_state = {0};
     win32_state.current_state = WIN32_STATE_NONE;
-
-    // Allocate memory upfront.
-    win32_memory_allocator_t memory_allocator = {0};
-    memory_allocator.permanent_memory_size = MEGABYTE(128u);
-    memory_allocator.permanent_memory =
+    win32_state.game_memory =
         VirtualAlloc(NULL, memory_allocator.permanent_memory_size,
                      MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-    ASSERT(memory_allocator.permanent_memory != NULL);
-
-    win32_state.game_memory = memory_allocator.permanent_memory;
     win32_state.game_memory_size = memory_allocator.permanent_memory_size;
 
     // Find the ms it takes to update the backbuffer.
@@ -449,12 +445,17 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
     win32_dimensions_t client_dimensions =
         win32_get_client_region_dimensions(window_handle);
 
+    HDC window_device_context = GetDC(window_handle);
+
     u64 backbuffer_update_start_time = win32_query_perf_counter();
     win32_update_backbuffer(window_device_context, client_dimensions.width,
                             client_dimensions.height);
+
     f32 backbuffer_update_time_seconds = (win32_get_seconds_elapsed(
         perf_counter_frequency, backbuffer_update_start_time,
         win32_query_perf_counter()));
+
+    ReleaseDC(window_handle, window_device_context);
 
     u64 last_counter_value = win32_query_perf_counter();
 
@@ -471,6 +472,8 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
     // Main game loop.
     while (1)
     {
+        window_device_context = GetDC(window_handle);
+
         // Check the last modified time of the DLL.
         FILETIME dll_last_modified_time =
             win32_get_last_time_file_was_modified("game.dll");
@@ -522,6 +525,22 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
         game_key_state_t r_key_state = get_game_key_state(
             current_keyboard_state_ptr, previous_keyboard_state_ptr, 'R');
 
+        // NOTE: Should rendering only be done when WM_PAINT is
+        // called, or should it be called in the game loop always?
+        game_framebuffer_t game_framebuffer = {0};
+        game_framebuffer.backbuffer_memory =
+            g_offscreen_framebuffer.backbuffer_memory;
+        game_framebuffer.width =
+            g_offscreen_framebuffer.bitmap_info_header.biWidth;
+        game_framebuffer.height =
+            g_offscreen_framebuffer.bitmap_info_header.biHeight * -1;
+
+        game_memory_allocator_t game_memory_allocator = {0};
+        game_memory_allocator.permanent_memory_size =
+            memory_allocator.permanent_memory_size;
+        game_memory_allocator.permanent_memory =
+            memory_allocator.permanent_memory;
+
         // If the R key (for record) is pressed, recording starts.
         if (r_key_state.is_key_down && r_key_state.state_changed)
         {
@@ -529,7 +548,8 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
             {
                 win32_state.current_state = WIN32_STATE_RECORDING;
 
-                win32_start_state_recording(&win32_state);
+                win32_start_state_recording(
+                    &win32_state, game_memory_allocator.permanent_memory);
             }
             else if (win32_state.current_state == WIN32_STATE_RECORDING)
             {
@@ -553,23 +573,6 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
             win32_start_playback(&win32_state, &game_input,
                                  memory_allocator.permanent_memory);
         }
-
-        // NOTE: Should rendering only be done when WM_PAINT is
-        // called, or should it be called in the game loop always?
-        game_framebuffer_t game_framebuffer = {0};
-        game_framebuffer.backbuffer_memory =
-            g_offscreen_framebuffer.backbuffer_memory;
-        game_framebuffer.width =
-            g_offscreen_framebuffer.bitmap_info_header.biWidth;
-        game_framebuffer.height =
-            g_offscreen_framebuffer.bitmap_info_header.biHeight * -1;
-
-        game_memory_allocator_t game_memory_allocator = {0};
-        game_memory_allocator.permanent_memory_size =
-            memory_allocator.permanent_memory_size;
-        game_memory_allocator.permanent_memory =
-            memory_allocator.permanent_memory;
-
         game_code.game_render(&game_memory_allocator, &game_framebuffer,
                               &game_input, &platform_services);
 
@@ -652,6 +655,8 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
             current_timestamp_counter - end_timestamp_counter;
 
         end_timestamp_counter = current_timestamp_counter;
+
+        ReleaseDC(window_handle, window_device_context);
     }
 
     ReleaseDC(window_handle, window_device_context);
@@ -665,8 +670,27 @@ LRESULT CALLBACK win32_window_proc(HWND window_handle, UINT message,
 {
     switch (message)
     {
-        // WM_CLOSE is called when the window is closed (shortcut key or the
-        // X button).
+    // WM_ACTIVATEAPP can be used to figure out if current window is active.
+    // If it is active, window will be opaque (since that is the center of
+    // focus). However, if its now, set the window opacity to 50% (make it a
+    // bit transclusent).
+    case WM_ACTIVATEAPP: {
+        BOOL is_window_active = (BOOL)wparam;
+        if (!is_window_active)
+        {
+            SetLayeredWindowAttributes(window_handle, RGB(0, 0, 0), 127,
+                                       LWA_ALPHA);
+        }
+        else
+        {
+            SetLayeredWindowAttributes(window_handle, RGB(0, 0, 0), 255,
+                                       LWA_ALPHA);
+        }
+    }
+    break;
+
+        // WM_CLOSE is called when the window is closed
+        // (shortcut key or the X button).
     case WM_CLOSE: {
         DestroyWindow(window_handle);
     }

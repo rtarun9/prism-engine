@@ -53,8 +53,14 @@ typedef struct
 // file. Also, the 'amount of data' recorded is required, so that we can loop
 // back whenever we playback the data and read all the recorded data. The
 // 'state' that the engine is in, either recording, or playing back.
-// A pointer to game memory is also stored, so that the game and input state can
-// be recorded and playedback.
+
+// For game memory, a different approach is taken.
+// The win32 state struct has its own memory, that equals the size of game
+// permanent memory.
+// When recording starts, take a snapshot (i.e memcpy) game state into this
+// game_memory pointer. From then on, when playback starts, you use the
+// win32_state game memory pointer. When recording stops, you can start using
+// the actual game memory pointer.
 enum WIN32_STATES
 {
     WIN32_STATE_RECORDING,
