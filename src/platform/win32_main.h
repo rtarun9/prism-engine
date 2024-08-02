@@ -48,4 +48,27 @@ typedef struct
     game_render_t *game_render;
 } game_code_t;
 
+// NOTE: To support loop recording, the following info is required:
+// File handles for writing keyboard input to, and for reading input from the
+// file. Also, the 'amount of data' recorded is required, so that we can loop
+// back whenever we playback the data and read all the recorded data. The
+// 'state' that the engine is in, either recording, or playing back.
+enum WIN32_STATES
+{
+    WIN32_STATE_RECORDING,
+    WIN32_STATE_PLAYBACK,
+    WIN32_STATE_NONE,
+};
+
+typedef struct
+{
+    HANDLE input_recording_file_handle;
+    u64 recorded_input_data_size;
+
+    HANDLE input_playback_file_handle;
+    u64 playback_input_data_size;
+
+    i8 current_state;
+} win32_state_t;
+
 #endif

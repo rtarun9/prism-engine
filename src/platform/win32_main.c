@@ -279,6 +279,66 @@ internal FILETIME win32_get_last_time_file_was_modified(const char *file_path)
 LRESULT CALLBACK win32_window_proc(HWND window_handle, UINT message,
                                    WPARAM wparam, LPARAM lparam);
 
+internal void win32_start_state_recording(win32_state_t *win32_state)
+{
+    // Open the file handle. KEEP it opened, so we can continuously write to
+    // file and append data to it.
+    win32_state->input_recording_file_handle =
+        CreateFileA("prism-state.sta", GENERIC_WRITE, 0, NULL, OPEN_ALWAYS,
+                    FILE_ATTRIBUTE_NORMAL, NULL);
+
+    win32_state->recorded_input_data_size = 0;
+}
+
+internal void win32_record_state(win32_state_t *win32_state,
+                                 game_input_t *game_input)
+{
+    // Write the game input into the file denoted by
+    // input_recording_file_handle.
+    DWORD number_of_bytes_written = {0};
+    WriteFile(win32_state->input_recording_file_handle, game_input,
+              sizeof(game_input_t), &number_of_bytes_written, NULL);
+
+    // TODO: Uhh.... required?
+    win32_state->recorded_input_data_size += sizeof(game_input_t);
+}
+
+internal void win32_stop_state_recording(win32_state_t *win32_state,
+                                         game_input_t *game_input)
+{
+    CloseHandle(win32_state->input_recording_file_handle);
+}
+
+internal void win32_start_playback(win32_state_t *win32_state,
+                                   game_input_t *game_input)
+{
+    // Keep reading from file, but if number of bytes read is 0, go back to the
+    // start.
+    if (!win32_state->input_playback_file_handle)
+    {
+        win32_state->input_playback_file_handle =
+            CreateFileA("prism-state.sta", GENERIC_READ, 0, NULL, OPEN_ALWAYS,
+                        FILE_ATTRIBUTE_NORMAL, NULL);
+    }
+
+    // Read from file.
+    DWORD number_of_bytes_read = {0};
+    ReadFile(win32_state->input_playback_file_handle, game_input,
+             sizeof(game_input_t), &number_of_bytes_read, NULL);
+
+    if (number_of_bytes_read == 0)
+    {
+        CloseHandle(win32_state->input_playback_file_handle);
+        win32_state->input_playback_file_handle = NULL;
+        win32_start_playback(win32_state, game_input);
+    }
+}
+
+internal void win32_stop_playback(win32_state_t *win32_state)
+{
+    CloseHandle(win32_state->input_playback_file_handle);
+}
+
 int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
                    LPSTR command_line, int show_command)
 {
@@ -365,9 +425,9 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
 
     // Find the ms it takes to update the backbuffer.
     // NOTE: This will wary each time the window is resized!!!
-    // The fix for this is a bit hacky, but each time the window is resized the
-    // stretch dibits call is profiled and the backbuffer_update_time_seconds is
-    // updated.
+    // The fix for this is a bit hacky, but each time the window is resized
+    // the stretch dibits call is profiled and the
+    // backbuffer_update_time_seconds is updated.
     win32_dimensions_t client_dimensions =
         win32_get_client_region_dimensions(window_handle);
 
@@ -389,6 +449,9 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
     platform_services.platform_read_entire_file = platform_read_entire_file;
     platform_services.platform_close_file = platform_close_file;
     platform_services.platform_write_to_file = platform_write_to_file;
+
+    win32_state_t win32_state = {0};
+    win32_state.current_state = WIN32_STATE_NONE;
 
     // Main game loop.
     while (1)
@@ -441,6 +504,40 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
         game_input.keyboard_state.key_space = get_game_key_state(
             current_keyboard_state_ptr, previous_keyboard_state_ptr, VK_SPACE);
 
+        game_key_state_t r_key_state = get_game_key_state(
+            current_keyboard_state_ptr, previous_keyboard_state_ptr, 'R');
+
+        // If the R key (for record) is pressed, recording starts.
+        if (r_key_state.is_key_down && r_key_state.state_changed)
+        {
+            if (win32_state.current_state == WIN32_STATE_NONE)
+            {
+                win32_state.current_state = WIN32_STATE_RECORDING;
+
+                win32_start_state_recording(&win32_state);
+            }
+            else if (win32_state.current_state == WIN32_STATE_RECORDING)
+            {
+                win32_stop_state_recording(&win32_state, &game_input);
+                win32_state.current_state = WIN32_STATE_PLAYBACK;
+            }
+            else if (win32_state.current_state == WIN32_STATE_PLAYBACK)
+            {
+                // Stop play black.
+                win32_stop_playback(&win32_state);
+                win32_state.current_state = WIN32_STATE_NONE;
+            }
+        }
+
+        if (win32_state.current_state == WIN32_STATE_RECORDING)
+        {
+            win32_record_state(&win32_state, &game_input);
+        }
+        else if (win32_state.current_state == WIN32_STATE_PLAYBACK)
+        {
+            win32_start_playback(&win32_state, &game_input);
+        }
+
         // NOTE: Should rendering only be done when WM_PAINT is
         // called, or should it be called in the game loop always?
         game_framebuffer_t game_framebuffer = {0};
@@ -463,8 +560,8 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
         win32_dimensions_t new_client_dimensions =
             win32_get_client_region_dimensions(window_handle);
 
-        // Sleep so that we can display the rendered frame as close as possible
-        // to the boundary of the vertical blank.
+        // Sleep so that we can display the rendered frame as close as
+        // possible to the boundary of the vertical blank.
         u64 counter_value_after_update_and_render = win32_query_perf_counter();
 
         f32 seconds_elapsed_for_processing_frame = win32_get_seconds_elapsed(
@@ -552,8 +649,8 @@ LRESULT CALLBACK win32_window_proc(HWND window_handle, UINT message,
 {
     switch (message)
     {
-        // WM_CLOSE is called when the window is closed (shortcut key or the X
-        // button).
+        // WM_CLOSE is called when the window is closed (shortcut key or the
+        // X button).
     case WM_CLOSE: {
         DestroyWindow(window_handle);
     }
