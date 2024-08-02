@@ -287,7 +287,13 @@ internal void win32_start_state_recording(win32_state_t *win32_state)
         CreateFileA("prism-state.sta", GENERIC_WRITE, 0, NULL, OPEN_ALWAYS,
                     FILE_ATTRIBUTE_NORMAL, NULL);
 
-    win32_state->recorded_input_data_size = 0;
+    // Write the current game memory state as soon as recording starts. The game
+    // memory will NOT be recorded other than this time!
+
+    DWORD number_of_bytes_written = {0};
+    WriteFile(win32_state->input_recording_file_handle,
+              win32_state->game_memory, (DWORD)win32_state->game_memory_size,
+              &number_of_bytes_written, NULL);
 }
 
 internal void win32_record_state(win32_state_t *win32_state,
@@ -298,9 +304,6 @@ internal void win32_record_state(win32_state_t *win32_state,
     DWORD number_of_bytes_written = {0};
     WriteFile(win32_state->input_recording_file_handle, game_input,
               sizeof(game_input_t), &number_of_bytes_written, NULL);
-
-    // TODO: Uhh.... required?
-    win32_state->recorded_input_data_size += sizeof(game_input_t);
 }
 
 internal void win32_stop_state_recording(win32_state_t *win32_state,
@@ -310,7 +313,8 @@ internal void win32_stop_state_recording(win32_state_t *win32_state,
 }
 
 internal void win32_start_playback(win32_state_t *win32_state,
-                                   game_input_t *game_input)
+                                   game_input_t *game_input,
+                                   u8 *permanent_game_memory_pointer)
 {
     // Keep reading from file, but if number of bytes read is 0, go back to the
     // start.
@@ -319,6 +323,13 @@ internal void win32_start_playback(win32_state_t *win32_state,
         win32_state->input_playback_file_handle =
             CreateFileA("prism-state.sta", GENERIC_READ, 0, NULL, OPEN_ALWAYS,
                         FILE_ATTRIBUTE_NORMAL, NULL);
+
+        // When you start playback, read game memory as soon as playback starts.
+        DWORD number_of_bytes_read = {0};
+        ReadFile(win32_state->input_playback_file_handle,
+                 permanent_game_memory_pointer,
+                 (DWORD)win32_state->game_memory_size, &number_of_bytes_read,
+                 NULL);
     }
 
     // Read from file.
@@ -330,7 +341,8 @@ internal void win32_start_playback(win32_state_t *win32_state,
     {
         CloseHandle(win32_state->input_playback_file_handle);
         win32_state->input_playback_file_handle = NULL;
-        win32_start_playback(win32_state, game_input);
+        win32_start_playback(win32_state, game_input,
+                             permanent_game_memory_pointer);
     }
 }
 
@@ -415,6 +427,9 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
     win32_keyboard_state_t *previous_keyboard_state_ptr =
         &previous_keyboard_state;
 
+    win32_state_t win32_state = {0};
+    win32_state.current_state = WIN32_STATE_NONE;
+
     // Allocate memory upfront.
     win32_memory_allocator_t memory_allocator = {0};
     memory_allocator.permanent_memory_size = MEGABYTE(128u);
@@ -422,6 +437,9 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
         VirtualAlloc(NULL, memory_allocator.permanent_memory_size,
                      MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     ASSERT(memory_allocator.permanent_memory != NULL);
+
+    win32_state.game_memory = memory_allocator.permanent_memory;
+    win32_state.game_memory_size = memory_allocator.permanent_memory_size;
 
     // Find the ms it takes to update the backbuffer.
     // NOTE: This will wary each time the window is resized!!!
@@ -449,9 +467,6 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
     platform_services.platform_read_entire_file = platform_read_entire_file;
     platform_services.platform_close_file = platform_close_file;
     platform_services.platform_write_to_file = platform_write_to_file;
-
-    win32_state_t win32_state = {0};
-    win32_state.current_state = WIN32_STATE_NONE;
 
     // Main game loop.
     while (1)
@@ -535,7 +550,8 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
         }
         else if (win32_state.current_state == WIN32_STATE_PLAYBACK)
         {
-            win32_start_playback(&win32_state, &game_input);
+            win32_start_playback(&win32_state, &game_input,
+                                 memory_allocator.permanent_memory);
         }
 
         // NOTE: Should rendering only be done when WM_PAINT is

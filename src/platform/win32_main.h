@@ -53,6 +53,8 @@ typedef struct
 // file. Also, the 'amount of data' recorded is required, so that we can loop
 // back whenever we playback the data and read all the recorded data. The
 // 'state' that the engine is in, either recording, or playing back.
+// A pointer to game memory is also stored, so that the game and input state can
+// be recorded and playedback.
 enum WIN32_STATES
 {
     WIN32_STATE_RECORDING,
@@ -63,12 +65,14 @@ enum WIN32_STATES
 typedef struct
 {
     HANDLE input_recording_file_handle;
-    u64 recorded_input_data_size;
 
     HANDLE input_playback_file_handle;
-    u64 playback_input_data_size;
+
+    u8 *game_memory;
+    u64 game_memory_size;
 
     i8 current_state;
+
 } win32_state_t;
 
 #endif

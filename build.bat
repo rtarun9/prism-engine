@@ -22,6 +22,8 @@ mkdir build
 pushd build
 
 del *.pdb
+del *.raddbg
+del *.sta
 
 cl /TC /Fe"main.exe" /DPRISM_DEBUG=1 /MT /nologo /WX /wd4100 /wd4189 /W4 /Od /Oi /Z7  ../src/platform/win32_main.c /link /SUBSYSTEM:windows user32.lib gdi32.lib Winmm.lib
 
