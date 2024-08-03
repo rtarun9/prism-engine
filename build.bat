@@ -1,12 +1,12 @@
 @echo on 
 call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat" x64
 
-REM The first script argument can be : (a) open_debugger or (b) no arguments (for compilation only) (c) run
+REM The first script argument can be : (a) open_debugger or (b) no arguments (for compilation only) (c) run (d) or clean
 
-REM explanation of all compiler flags used : 
+REM explanation of some compiler flags used : 
 REM /TC -> Specifies all source files are C.
 REM /Fe -> rename the executable.
-REM /MT -> Statistically link with the CRT.
+REM /MTd -> Statically link with the debug version of CRT.
 REM /nologo -> Supress messages of optimizing compilers and other logo messages.
 REM /WX -> Treat warnings as errors.
 REM /wdX -> Ignore some errors.
@@ -25,16 +25,9 @@ del *.pdb
 del *.raddbg
 del *.sta
 
-cl /TC /Fe"main.exe" /DPRISM_DEBUG=1 /MT /nologo /WX /wd4100 /wd4189 /W4 /Od /Oi /Z7  ../src/platform/win32_main.c /link /SUBSYSTEM:windows user32.lib gdi32.lib Winmm.lib
+cl /TC /Fe"main.exe" /DPRISM_DEBUG=1 /MTd /nologo /WX /wd4100 /wd4189 /W4 /Od /Oi /Z7  ../src/platform/win32_main.c /link /SUBSYSTEM:windows user32.lib gdi32.lib Winmm.lib
 
-REM reference that tells how to append timestamp to file name in bat files : https://stackoverflow.com/questions/23226233/how-to-add-date-and-time-to-filename-in-dos
-set dd=%date:~0,2%
-set mm=%date:~3,2%
-set yyyy=%date:~6,8%
-set mm=%time:~3,2%
-set ss=%time:~6,2%
-
-set pdb_file_timestamp=game__%dd%_%mm%_%yyyy%_%mm%_%ss%
+set pdb_file_timestamp=game_%random%_%random%_%random%
 cl /TC /DPRISM_DEBUG=1 /MT /nologo /WX /wd4100 /wd4189 /W4 /Od /Oi /Z7  /LD ../src/game.c /link /pdb:%pdb_file_timestamp%.pdb  
 popd
 
@@ -47,6 +40,12 @@ IF "%1"=="open_debugger" (
 IF "%1"=="run" (
     cd build/
     main.exe
+    cd ../
+)
+
+IF "%1"=="clean" (
+    cd build/
+    del /Q *
     cd ../
 )
 

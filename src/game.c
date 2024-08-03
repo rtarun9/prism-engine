@@ -25,12 +25,15 @@ __declspec(dllexport) void game_render(
 
         game_state->is_initialized = 1;
 
+        ASSERT(platform_services != NULL);
+
         platform_file_read_result_t file_read_result =
             platform_services->platform_read_entire_file(__FILE__);
 
         platform_services->platform_write_to_file(
             "temp.txt", file_read_result.file_content_buffer,
             file_read_result.file_content_size);
+
         platform_services->platform_close_file(
             file_read_result.file_content_buffer);
     }
@@ -98,7 +101,7 @@ __declspec(dllexport) void game_render(
             // as: BB GG RR xx
             u8 blue = (u8)(x + game_state->blue_offset);
             u8 green = (u8)(y + game_state->green_offset);
-            *pixel++ = (green << 16) | blue;
+            *pixel++ = (green << 8) | blue;
         }
 
         row += row_stride;

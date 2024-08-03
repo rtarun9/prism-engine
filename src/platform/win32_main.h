@@ -77,7 +77,7 @@ typedef struct
     u8 *game_memory;
     u64 game_memory_size;
 
-    i8 current_state;
+    enum WIN32_STATES current_state;
 
 } win32_state_t;
 

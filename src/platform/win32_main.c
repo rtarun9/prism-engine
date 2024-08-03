@@ -2,6 +2,7 @@
 
 #include <fileapi.h>
 #include <libloaderapi.h>
+#include <minwinbase.h>
 #include <stdio.h>
 #include <timeapi.h>
 #include <winbase.h>
@@ -114,11 +115,6 @@ get_game_key_state(win32_keyboard_state_t *restrict current_keyboard_state,
     key_state.is_key_down = is_key_down;
     key_state.state_changed = (is_key_down != was_key_down);
 
-    if (key_state.state_changed)
-    {
-        int x = 3;
-    }
-
     return key_state;
 }
 
@@ -177,11 +173,12 @@ platform_read_entire_file(const char *file_path)
 
 internal void platform_close_file(u8 *file_content_buffer)
 {
+    ASSERT(file_content_buffer == NULL);
     VirtualFree(file_content_buffer, 0, MEM_RELEASE);
 }
 
-internal void platform_write_to_file(const char *file_path,
-                                     u8 *file_content_buffer,
+internal void platform_write_to_file(const char *restrict file_path,
+                                     u8 *restrict file_content_buffer,
                                      u64 file_content_size)
 {
     ASSERT(file_content_size != 0);
@@ -262,17 +259,11 @@ internal FILETIME win32_get_last_time_file_was_modified(const char *file_path)
 {
     FILETIME last_time_file_was_modified = {0};
 
-    WIN32_FIND_DATAA file_find_data = {0};
-    HANDLE dll_handle = FindFirstFileA(file_path, &file_find_data);
-    if (dll_handle != INVALID_HANDLE_VALUE)
-    {
-        last_time_file_was_modified = file_find_data.ftLastWriteTime;
-        FindClose(dll_handle);
-    }
-    else
-    {
-        ASSERT(0);
-    }
+    WIN32_FILE_ATTRIBUTE_DATA file_attribute_data = {0};
+    GetFileAttributesExA(file_path, GetFileExInfoStandard,
+                         &file_attribute_data);
+
+    last_time_file_was_modified = file_attribute_data.ftLastWriteTime;
 
     return last_time_file_was_modified;
 }
@@ -280,8 +271,8 @@ internal FILETIME win32_get_last_time_file_was_modified(const char *file_path)
 LRESULT CALLBACK win32_window_proc(HWND window_handle, UINT message,
                                    WPARAM wparam, LPARAM lparam);
 
-internal void win32_start_state_recording(win32_state_t *win32_state,
-                                          u8 *game_permanent_memory)
+internal void win32_start_state_recording(win32_state_t *restrict win32_state,
+                                          u8 *restrict game_permanent_memory)
 {
     // Open the file handle. KEEP it opened, so we can continuously write to
     // file and append data to it.
@@ -293,8 +284,8 @@ internal void win32_start_state_recording(win32_state_t *win32_state,
                win32_state->game_memory_size);
 }
 
-internal void win32_record_state(win32_state_t *win32_state,
-                                 game_input_t *game_input)
+internal void win32_record_state(win32_state_t *restrict win32_state,
+                                 game_input_t *restrict game_input)
 {
     // Write the game input into the file denoted by
     // input_recording_file_handle.
@@ -303,15 +294,15 @@ internal void win32_record_state(win32_state_t *win32_state,
               sizeof(game_input_t), &number_of_bytes_written, NULL);
 }
 
-internal void win32_stop_state_recording(win32_state_t *win32_state,
-                                         game_input_t *game_input)
+internal void win32_stop_state_recording(win32_state_t *restrict win32_state,
+                                         game_input_t *restrict game_input)
 {
     CloseHandle(win32_state->input_recording_file_handle);
 }
 
-internal void win32_start_playback(win32_state_t *win32_state,
-                                   game_input_t *game_input,
-                                   u8 *permanent_game_memory_pointer)
+internal void win32_start_playback(win32_state_t *restrict win32_state,
+                                   game_input_t *restrict game_input,
+                                   u8 *restrict permanent_game_memory_pointer)
 {
     // Keep reading from file, but if number of bytes read is 0, go back to the
     // start.
@@ -354,12 +345,6 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
     b8 is_schedular_granularity_per_ms =
         (b8)(timeBeginPeriod(windows_schedular_granularity_level) ==
              TIMERR_NOERROR);
-
-    // FIX: Is there some windows function to get the actual monitor
-    // refresh rate rather than just assuming it to be 60?
-    const u64 monitor_refresh_rate = 60;
-    const u64 game_update_hz = monitor_refresh_rate;
-    const f32 target_seconds_per_frame = 1.0f / game_update_hz;
 
     // Get the number of increments / counts the high performance counter
     // does in a single second. According to MSDN, the high perf counter has
@@ -455,6 +440,17 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
         perf_counter_frequency, backbuffer_update_start_time,
         win32_query_perf_counter()));
 
+    // Before releasing the DC, get the monitor refresh rate.
+    u64 monitor_refresh_rate = 60;
+
+    i32 queried_refresh_rate = GetDeviceCaps(window_device_context, VREFRESH);
+
+    if (queried_refresh_rate > 1)
+    {
+        monitor_refresh_rate = queried_refresh_rate;
+    }
+    const u64 game_update_hz = monitor_refresh_rate;
+    const f32 target_seconds_per_frame = 1.0f / game_update_hz;
     ReleaseDC(window_handle, window_device_context);
 
     u64 last_counter_value = win32_query_perf_counter();
@@ -678,7 +674,7 @@ LRESULT CALLBACK win32_window_proc(HWND window_handle, UINT message,
         BOOL is_window_active = (BOOL)wparam;
         if (!is_window_active)
         {
-            SetLayeredWindowAttributes(window_handle, RGB(0, 0, 0), 127,
+            SetLayeredWindowAttributes(window_handle, RGB(0, 0, 0), 64,
                                        LWA_ALPHA);
         }
         else
