@@ -25,7 +25,7 @@ del *.pdb
 del *.raddbg
 del *.sta
 
-cl /TC /Fe"main.exe" /DPRISM_DEBUG=1 /MTd /nologo /WX /wd4100 /wd4189 /W4 /Od /Oi /Z7  ../src/platform/win32_main.c /link /SUBSYSTEM:windows user32.lib gdi32.lib Winmm.lib
+cl /TC /Fe"main.exe" /DPRISM_DEBUG=1 /MTd /nologo /WX /wd4100 /wd4189 /W4 /Od /Oi /Z7  ../src/platform/win32_main.c /link /SUBSYSTEM:windows user32.lib gdi32.lib Winmm.lib Advapi32.lib
 
 set pdb_file_timestamp=game_%random%_%random%_%random%
 cl /TC /DPRISM_DEBUG=1 /MT /nologo /WX /wd4100 /wd4189 /W4 /Od /Oi /Z7  /LD ../src/game.c /link /pdb:%pdb_file_timestamp%.pdb  

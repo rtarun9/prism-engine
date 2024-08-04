@@ -2,10 +2,15 @@
 
 #include <fileapi.h>
 #include <libloaderapi.h>
+#include <memoryapi.h>
 #include <minwinbase.h>
+#include <processthreadsapi.h>
+#include <securitybaseapi.h>
 #include <stdio.h>
 #include <timeapi.h>
 #include <winbase.h>
+#include <winerror.h>
+#include <winnt.h>
 #include <winuser.h>
 
 // NOTE: Explanation of the rendering logic:
@@ -173,7 +178,7 @@ platform_read_entire_file(const char *file_path)
 
 internal void platform_close_file(u8 *file_content_buffer)
 {
-    ASSERT(file_content_buffer == NULL);
+    ASSERT(file_content_buffer != NULL);
     VirtualFree(file_content_buffer, 0, MEM_RELEASE);
 }
 
@@ -337,9 +342,65 @@ internal void win32_stop_playback(win32_state_t *win32_state)
     CloseHandle(win32_state->input_playback_file_handle);
 }
 
+// TODO: Move to platform independent code section.
+internal SIZE_T get_nearest_multiple(SIZE_T value, SIZE_T multiple)
+{
+    if (value % multiple == 0)
+    {
+        return value;
+    }
+
+    return value + multiple - (value % multiple);
+}
+
+internal SIZE_T win32_setup_large_pages_and_get_minimum_lage_page_size()
+{
+    HANDLE token = {0};
+    if (!OpenProcessToken(GetCurrentProcess(),
+                          TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token))
+    {
+        ASSERT(0);
+    }
+
+    // Lookup the LUID of the SeLockMemoryPrivilege.
+    LUID se_lock_memory_privilege_luid = {0};
+    if (!LookupPrivilegeValueA(NULL, SE_LOCK_MEMORY_NAME,
+                               &se_lock_memory_privilege_luid))
+    {
+        ASSERT(0);
+    }
+
+    LUID_AND_ATTRIBUTES se_lock_memory_privilege_and_attributes = {0};
+    se_lock_memory_privilege_and_attributes.Luid =
+        se_lock_memory_privilege_luid;
+    se_lock_memory_privilege_and_attributes.Attributes = SE_PRIVILEGE_ENABLED;
+
+    TOKEN_PRIVILEGES token_privileges = {0};
+    token_privileges.Privileges[0] = se_lock_memory_privilege_and_attributes;
+    token_privileges.PrivilegeCount = 1;
+
+    if (!AdjustTokenPrivileges(token, FALSE, &token_privileges, 0, NULL, NULL))
+    {
+        ASSERT(0);
+    }
+
+    DWORD adjust_token_privilege_error = GetLastError();
+    if (adjust_token_privilege_error == ERROR_NOT_ALL_ASSIGNED)
+    {
+        ASSERT(0);
+    }
+
+    return GetLargePageMinimum();
+}
+
 int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
                    LPSTR command_line, int show_command)
 {
+    // If memory is allocated with the large page flag, the alignment and size
+    // must be a multiple of the minimum large page size.
+    SIZE_T win32_minimum_large_page_size =
+        win32_setup_large_pages_and_get_minimum_lage_page_size();
+
     // Set the windows schedular granularity level.
     const u32 windows_schedular_granularity_level = 1u;
     b8 is_schedular_granularity_per_ms =
@@ -371,7 +432,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
 
     // Create a window.
     HWND window_handle =
-        CreateWindowExA(WS_EX_TOPMOST | WS_EX_LAYERED, "BaseWindowClass",
+        CreateWindowExA(/*WS_EX_TOPMOST |*/ WS_EX_LAYERED, "BaseWindowClass",
                         "prism-engine", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT,
                         CW_USEDEFAULT, 1080, 720, NULL, NULL, instance, NULL);
     if (window_handle == NULL)
@@ -396,10 +457,11 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
 
     // Allocate memory upfront.
     win32_memory_allocator_t memory_allocator = {0};
-    memory_allocator.permanent_memory_size = MEGABYTE(128u);
-    memory_allocator.permanent_memory =
-        VirtualAlloc(NULL, memory_allocator.permanent_memory_size,
-                     MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    memory_allocator.permanent_memory_size =
+        get_nearest_multiple(MEGABYTE(128u), win32_minimum_large_page_size);
+    memory_allocator.permanent_memory = VirtualAlloc(
+        NULL, memory_allocator.permanent_memory_size,
+        MEM_COMMIT | MEM_RESERVE | MEM_LARGE_PAGES, PAGE_READWRITE);
     ASSERT(memory_allocator.permanent_memory != NULL);
 
     // Some explanation for the input module :
@@ -417,9 +479,9 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
     // Setup the win32 state and allocate memory for the game permanent pointer.
     win32_state_t win32_state = {0};
     win32_state.current_state = WIN32_STATE_NONE;
-    win32_state.game_memory =
-        VirtualAlloc(NULL, memory_allocator.permanent_memory_size,
-                     MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    win32_state.game_memory = VirtualAlloc(
+        NULL, memory_allocator.permanent_memory_size,
+        MEM_COMMIT | MEM_RESERVE | MEM_LARGE_PAGES, PAGE_READWRITE);
     win32_state.game_memory_size = memory_allocator.permanent_memory_size;
 
     // Find the ms it takes to update the backbuffer.
