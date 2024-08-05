@@ -1,5 +1,6 @@
 #include "win32_main.h"
 
+#include <errhandlingapi.h>
 #include <fileapi.h>
 #include <libloaderapi.h>
 #include <memoryapi.h>
@@ -342,17 +343,6 @@ internal void win32_stop_playback(win32_state_t *win32_state)
     CloseHandle(win32_state->input_playback_file_handle);
 }
 
-// TODO: Move to platform independent code section.
-internal SIZE_T get_nearest_multiple(SIZE_T value, SIZE_T multiple)
-{
-    if (value % multiple == 0)
-    {
-        return value;
-    }
-
-    return value + multiple - (value % multiple);
-}
-
 internal SIZE_T win32_setup_large_pages_and_get_minimum_lage_page_size()
 {
     HANDLE token = {0};
@@ -387,7 +377,13 @@ internal SIZE_T win32_setup_large_pages_and_get_minimum_lage_page_size()
     DWORD adjust_token_privilege_error = GetLastError();
     if (adjust_token_privilege_error == ERROR_NOT_ALL_ASSIGNED)
     {
-        ASSERT(0);
+        MessageBoxA(
+            NULL,
+            "AdjustTokenPrivileges was succesfull, but SeLockMemoryPrivilege "
+            "could not be set. Consider opening 'Local Security Policy/Local "
+            "Policies/User Rights Assignment/Lock pages in memory' to find if "
+            "your user falls under the 'security setting' tab",
+            "ERROR", MB_OK);
     }
 
     return GetLargePageMinimum();
@@ -430,11 +426,14 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
         OutputDebugStringA("Failed to create window class.");
     }
 
-    // Create a window.
+    // TODO: having the WS_EX_TOPMOST window flag causes some issues because
+    // while the window is transparent, if the mouse is over the top most window
+    // this window captures it, which is annoying when debugging happens. Create
+    // a window.
     HWND window_handle =
         CreateWindowExA(/*WS_EX_TOPMOST |*/ WS_EX_LAYERED, "BaseWindowClass",
                         "prism-engine", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT,
-                        CW_USEDEFAULT, 1080, 720, NULL, NULL, instance, NULL);
+                        CW_USEDEFAULT, 1920, 1080, NULL, NULL, instance, NULL);
     if (window_handle == NULL)
     {
         OutputDebugStringA("Failed to create window.");
@@ -442,7 +441,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
 
     ShowWindow(window_handle, SW_SHOW);
 
-    win32_resize_bitmap(1080, 720);
+    win32_resize_bitmap(1920 / 2, 1080 / 2);
 
     // RDTSC stands for read timestamp counter. Each processes will have a
     // time stamp counter, which basically increments after each clock
@@ -458,10 +457,11 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
     // Allocate memory upfront.
     win32_memory_allocator_t memory_allocator = {0};
     memory_allocator.permanent_memory_size =
-        get_nearest_multiple(MEGABYTE(128u), win32_minimum_large_page_size);
+        get_nearest_multiple(MEGABYTE(1), win32_minimum_large_page_size);
     memory_allocator.permanent_memory = VirtualAlloc(
         NULL, memory_allocator.permanent_memory_size,
         MEM_COMMIT | MEM_RESERVE | MEM_LARGE_PAGES, PAGE_READWRITE);
+    DWORD error = GetLastError();
     ASSERT(memory_allocator.permanent_memory != NULL);
 
     // Some explanation for the input module :
@@ -565,6 +565,8 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
         GetKeyboardState(current_keyboard_state_ptr->key_states);
 
         game_input_t game_input = {0};
+        game_input.dt_for_frame = target_seconds_per_frame;
+
         game_input.keyboard_state.key_w = get_game_key_state(
             current_keyboard_state_ptr, previous_keyboard_state_ptr, 'W');
 
@@ -661,7 +663,15 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
         }
         else
         {
-            // TODO: SPIN LOCK?
+            while (seconds_elapsed_for_processing_frame +
+                       backbuffer_update_time_seconds <
+                   target_seconds_per_frame)
+            {
+                seconds_elapsed_for_processing_frame =
+                    win32_get_seconds_elapsed(perf_counter_frequency,
+                                              last_counter_value,
+                                              win32_query_perf_counter());
+            }
         }
 
         // Check if the new client dimensions match the previous one.

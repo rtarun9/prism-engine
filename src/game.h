@@ -34,6 +34,7 @@ typedef struct
 typedef struct
 {
     game_keyboard_state_t keyboard_state;
+    f32 dt_for_frame;
 } game_input_t;
 
 typedef struct
@@ -46,12 +47,8 @@ typedef struct
 // memory.
 typedef struct
 {
-    f32 blue_offset;
-    f32 green_offset;
-
-    i16 player_x;
-    i16 player_y;
-
+    f32 player_x;
+    f32 player_y;
     b8 is_initialized;
 } game_state_t;
 

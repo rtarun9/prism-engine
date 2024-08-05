@@ -46,4 +46,14 @@ typedef double f64;
 #define ASSERT(x)
 #endif
 
+internal u64 get_nearest_multiple(u64 value, u64 multiple)
+{
+    if (value % multiple == 0)
+    {
+        return value;
+    }
+
+    return value + multiple - (value % multiple);
+}
+
 #endif
