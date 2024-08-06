@@ -52,6 +52,20 @@ typedef struct
     b8 is_initialized;
 } game_state_t;
 
+typedef struct
+{
+    i32 tile_map_width;
+    i32 tile_map_height;
+
+    f32 tile_width;
+    f32 tile_height;
+
+    f32 upper_left_offset_x;
+    f32 upper_left_offset_y;
+
+    u8 *tile_map;
+} game_tile_map_t;
+
 // Services / interfaces provided by the platform layer to the game.
 typedef struct
 {
