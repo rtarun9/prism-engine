@@ -92,9 +92,6 @@ typedef struct
 
     i32 tile_map_x;
     i32 tile_map_y;
-
-    f32 new_position_x;
-    f32 new_position_y;
 } point_and_tilemap_collision_result_t;
 
 internal point_and_tilemap_collision_result_t check_point_and_tilemap_collision(
@@ -106,16 +103,12 @@ internal point_and_tilemap_collision_result_t check_point_and_tilemap_collision(
         (tile_maps + current_tilemap_x + current_tilemap_y * 2);
     point_and_tilemap_collision_result_t result = {0};
 
-    // Get the x and y position relative to the upper left offset.
-    f32 relative_x = x - tile_map->upper_left_offset_x;
-    f32 relative_y = y - tile_map->upper_left_offset_y;
-
     // Get the coordinates in the tile map.
-    i32 tile_map_coord_x =
-        truncate_f32_to_i32(relative_x / tile_map->tile_width);
+    i32 tile_map_coord_x = truncate_f32_to_i32(
+        x / (tile_map->tile_width * (current_tilemap_x + 1)));
 
-    i32 tile_map_coord_y =
-        truncate_f32_to_i32(relative_y / tile_map->tile_height);
+    i32 tile_map_coord_y = truncate_f32_to_i32(
+        y / (tile_map->tile_height * (current_tilemap_y + 1)));
 
     // Check if there is a tilemap where the player wants to head to.
     if (tile_map_coord_x < 0)
@@ -131,13 +124,13 @@ internal point_and_tilemap_collision_result_t check_point_and_tilemap_collision(
 
     if (tile_map_coord_y < 0)
     {
-        tile_map_coord_y = tile_map->tile_map_height + tile_map_coord_y;
-        result.tile_map_y--;
+        tile_map_coord_y = 0;
+        result.tile_map_y++;
     }
     else if (tile_map_coord_y > tile_map->tile_map_height)
     {
         tile_map_coord_y = tile_map_coord_y - tile_map->tile_map_height;
-        result.tile_map_y++;
+        result.tile_map_y--;
     }
 
     // TODO: Move this data into a world struct instead of hardcoding it.
@@ -163,10 +156,6 @@ internal point_and_tilemap_collision_result_t check_point_and_tilemap_collision(
         else
         {
             result.point_collides_with_tilemap = 0;
-
-            // BUG: Pretty sure this is wrong..
-            result.new_position_x = (f32)tile_map_coord_x;
-            result.new_position_y = (f32)tile_map_coord_y;
         }
 
         return result;
@@ -218,7 +207,7 @@ __declspec(dllexport) void game_render(
 #define TILE_MAP_HEIGHT 9
 
     // NOTE: Test of dense tile map (2x2).
-    const u8 tile_map_level_00[TILE_MAP_HEIGHT][TILE_MAP_WIDTH] = {
+    const u8 tile_map_level_10[TILE_MAP_HEIGHT][TILE_MAP_WIDTH] = {
         {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
         {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
         {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
@@ -229,7 +218,7 @@ __declspec(dllexport) void game_render(
         {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
         {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}};
 
-    const u8 tile_map_level_01[TILE_MAP_HEIGHT][TILE_MAP_WIDTH] = {
+    const u8 tile_map_level_11[TILE_MAP_HEIGHT][TILE_MAP_WIDTH] = {
         {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
         {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
         {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
@@ -240,7 +229,7 @@ __declspec(dllexport) void game_render(
         {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
         {1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1}};
 
-    const u8 tile_map_level_10[TILE_MAP_HEIGHT][TILE_MAP_WIDTH] = {
+    const u8 tile_map_level_00[TILE_MAP_HEIGHT][TILE_MAP_WIDTH] = {
         {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
         {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
         {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
@@ -251,7 +240,7 @@ __declspec(dllexport) void game_render(
         {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
         {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}};
 
-    const u8 tile_map_level_11[TILE_MAP_HEIGHT][TILE_MAP_WIDTH] = {
+    const u8 tile_map_level_01[TILE_MAP_HEIGHT][TILE_MAP_WIDTH] = {
         {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
         {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
         {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
@@ -280,14 +269,16 @@ __declspec(dllexport) void game_render(
 
     // Clear the screen.
 
+    // Rendering offsets.
     // This is done because the tile width and tile map width are not the same
     // (see the division by 16 for tile width and number of columns of tile
     // map).
     // The borders aren't too important, and its fine if (atleast in the X
     // direction) only 1/2 of the tile in the left and right border is seen.
-    world_tile_maps[0][0].upper_left_offset_x =
+
+    f32 tile_map_rendering_upper_left_offset_x =
         -(f32)world_tile_maps[0][0].tile_width / 2.0f;
-    world_tile_maps[0][0].upper_left_offset_y = 0.0f;
+    f32 tile_map_rendering_upper_left_offset_y = 0.0f;
 
     world_tile_maps[0][1] = world_tile_maps[0][0];
     world_tile_maps[0][1].tile_map = (u8 *)tile_map_level_01;
@@ -295,39 +286,8 @@ __declspec(dllexport) void game_render(
     world_tile_maps[1][1] = world_tile_maps[0][0];
     world_tile_maps[1][1].tile_map = (u8 *)tile_map_level_11;
 
-    world_tile_maps[1][0] = world_tile_maps[1][0];
+    world_tile_maps[1][0] = world_tile_maps[0][0];
     world_tile_maps[1][0].tile_map = (u8 *)tile_map_level_10;
-
-    game_tile_map_t *tile_map =
-        ((game_tile_map_t *)world_tile_maps + game_state->current_tile_map_x +
-         game_state->current_tile_map_y * 2);
-
-    draw_rectangle(game_framebuffer, 0.0f, 0.0f, (f32)game_framebuffer->width,
-                   (f32)game_framebuffer->height, 1.0f, 0.0f, 0.0f);
-    // Draw the tile map.
-    for (i32 y = 0; y < TILE_MAP_HEIGHT; ++y)
-    {
-        for (i32 x = 0; x < TILE_MAP_WIDTH; ++x)
-        {
-            const f32 top_left_x =
-                tile_map->upper_left_offset_x + x * tile_map->tile_width;
-            const f32 top_left_y =
-                tile_map->upper_left_offset_y + y * tile_map->tile_height;
-
-            if (get_tile_map_value(tile_map, x, y) == 1)
-            {
-                draw_rectangle(game_framebuffer, (f32)top_left_x,
-                               (f32)top_left_y, (f32)tile_map->tile_width,
-                               (f32)tile_map->tile_height, 1.0f, 1.0f, 1.0f);
-            }
-            else
-            {
-                draw_rectangle(game_framebuffer, (f32)top_left_x,
-                               (f32)top_left_y, (f32)tile_map->tile_width,
-                               (f32)tile_map->tile_height, 0.0f, 0.0f, 0.0f);
-            }
-        }
-    }
 
     // Update player position based on input.
     // Movement speed is in pixels / second.
@@ -348,6 +308,11 @@ __declspec(dllexport) void game_render(
     player_new_x_position *= player_movement_speed;
     player_new_y_position *= player_movement_speed;
 
+    player_new_x_position += game_state->player_x;
+    player_new_y_position += game_state->player_y;
+
+    game_tile_map_t *tile_map = (game_tile_map_t *)world_tile_maps;
+
     // The player position will be at the middle bottom of the player sprite
     // (players feet in technical terms?)
     // The player center is not used since the player can go near a wall,
@@ -356,46 +321,40 @@ __declspec(dllexport) void game_render(
     const f32 player_sprite_width = tile_map->tile_width * 0.75f;
     const f32 player_sprite_height = tile_map->tile_height * 0.9f;
 
-    const f32 player_top_left_x =
-        game_state->player_x - 0.5f * player_sprite_width;
-    const f32 player_top_left_y = game_state->player_y - player_sprite_height;
-
     {
         point_and_tilemap_collision_result_t player_position_collision_check =
             check_point_and_tilemap_collision(
-                tile_map, player_new_x_position + game_state->player_x,
-                player_new_y_position + game_state->player_y,
+                tile_map, player_new_x_position, player_new_y_position,
                 game_state->current_tile_map_x, game_state->current_tile_map_y);
 
         point_and_tilemap_collision_result_t
             player_bottom_right_corner_collision_check =
                 check_point_and_tilemap_collision(
                     tile_map,
-                    player_new_x_position + game_state->player_x +
-                        player_sprite_width * 0.5f,
-                    player_new_y_position + game_state->player_y,
-                    game_state->current_tile_map_x,
+                    player_new_x_position + player_sprite_width * 0.5f,
+                    player_new_y_position, game_state->current_tile_map_x,
                     game_state->current_tile_map_y);
 
         point_and_tilemap_collision_result_t
             player_bottom_left_corner_collision_check =
                 check_point_and_tilemap_collision(
                     tile_map,
-                    player_new_x_position + game_state->player_x -
-                        player_sprite_width * 0.5f,
-                    player_new_y_position + game_state->player_y,
-                    game_state->current_tile_map_x,
+                    player_new_x_position - player_sprite_width * 0.5f,
+                    player_new_y_position, game_state->current_tile_map_x,
                     game_state->current_tile_map_y);
 
         // The player is 'collided' if even 1 of the checks fail.
-        if (!(player_position_collision_check.point_collides_with_tilemap ||
-              player_bottom_left_corner_collision_check
-                  .point_collides_with_tilemap ||
-              player_bottom_right_corner_collision_check
-                  .point_collides_with_tilemap))
+        if ((player_position_collision_check.point_collides_with_tilemap == 0 &&
+             player_bottom_left_corner_collision_check
+                     .point_collides_with_tilemap == 0 &&
+             player_bottom_right_corner_collision_check
+                     .point_collides_with_tilemap == 0))
         {
-            // Player can potentially switch tilemaps. Check if such scenario
-            // has happened.
+            // Player can move to new position!!! Check for change in current
+            // tilemap.
+            // Note that this is ONLY done by checking the players position (i.e
+            // player_position_collision_check). This should make the code
+            // simpler as well.
             if (game_state->current_tile_map_x !=
                     player_position_collision_check.tile_map_x ||
                 game_state->current_tile_map_y !=
@@ -405,54 +364,48 @@ __declspec(dllexport) void game_render(
                     player_position_collision_check.tile_map_x;
                 game_state->current_tile_map_y =
                     player_position_collision_check.tile_map_y;
-
-                game_state->player_x =
-                    player_position_collision_check.new_position_x;
-                game_state->player_y =
-                    player_position_collision_check.new_position_y;
             }
-            else if (game_state->current_tile_map_x !=
-                         player_bottom_left_corner_collision_check.tile_map_x ||
-                     game_state->current_tile_map_y !=
-                         player_bottom_left_corner_collision_check.tile_map_y)
-            {
-                game_state->current_tile_map_x =
-                    player_bottom_left_corner_collision_check.tile_map_x;
-                game_state->current_tile_map_y =
-                    player_bottom_left_corner_collision_check.tile_map_y;
 
-                game_state->player_x =
-                    player_bottom_left_corner_collision_check.new_position_x;
-                game_state->player_y =
-                    player_bottom_left_corner_collision_check.new_position_y;
-            }
-            else if (game_state->current_tile_map_x !=
-                         player_bottom_right_corner_collision_check
-                             .tile_map_x ||
-                     game_state->current_tile_map_y !=
-                         player_bottom_right_corner_collision_check.tile_map_y)
-            {
-                game_state->current_tile_map_x =
-                    player_bottom_right_corner_collision_check.tile_map_x;
-                game_state->current_tile_map_y =
-                    player_bottom_right_corner_collision_check.tile_map_y;
+            game_state->player_x = player_new_x_position;
+            game_state->player_y = player_new_y_position;
+        }
+    }
 
-                game_state->player_x =
-                    player_bottom_right_corner_collision_check.new_position_x;
-                game_state->player_y =
-                    player_bottom_right_corner_collision_check.new_position_y;
+    tile_map =
+        ((game_tile_map_t *)world_tile_maps + game_state->current_tile_map_x +
+         game_state->current_tile_map_y * 2);
+
+    // Clear screen.
+    draw_rectangle(game_framebuffer, 0.0f, 0.0f, (f32)game_framebuffer->width,
+                   (f32)game_framebuffer->height, 1.0f, 0.0f, 0.0f);
+    // Draw the tile map.
+    for (i32 y = 0; y < TILE_MAP_HEIGHT; ++y)
+    {
+        for (i32 x = 0; x < TILE_MAP_WIDTH; ++x)
+        {
+            const f32 top_left_x = tile_map_rendering_upper_left_offset_x +
+                                   x * tile_map->tile_width;
+            const f32 top_left_y = tile_map_rendering_upper_left_offset_y +
+                                   y * tile_map->tile_height;
+
+            if (get_tile_map_value(tile_map, x, y) == 1)
+            {
+                draw_rectangle(game_framebuffer, (f32)top_left_x,
+                               (f32)top_left_y, (f32)tile_map->tile_width,
+                               (f32)tile_map->tile_height, 1.0f, 1.0f, 1.0f);
             }
             else
             {
-                game_state->player_x += player_new_x_position;
-                game_state->player_y += player_new_y_position;
+                draw_rectangle(game_framebuffer, (f32)top_left_x,
+                               (f32)top_left_y, (f32)tile_map->tile_width,
+                               (f32)tile_map->tile_height, 0.0f, 0.0f, 0.0f);
             }
         }
-        else
-        {
-            // Collision occured, dont move the player.
-        }
     }
+
+    const f32 player_top_left_x =
+        game_state->player_x - 0.5f * player_sprite_width;
+    const f32 player_top_left_y = game_state->player_y - player_sprite_height;
 
     draw_rectangle(game_framebuffer, (f32)player_top_left_x,
                    (f32)player_top_left_y, (f32)player_sprite_width,

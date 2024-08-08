@@ -47,6 +47,7 @@ typedef struct
 // memory.
 typedef struct
 {
+    // NOTE: These values are GLOBAL and not per tilemap.
     f32 player_x;
     f32 player_y;
 
@@ -63,9 +64,6 @@ typedef struct
 
     f32 tile_width;
     f32 tile_height;
-
-    f32 upper_left_offset_x;
-    f32 upper_left_offset_y;
 
     u8 *tile_map;
 } game_tile_map_t;
