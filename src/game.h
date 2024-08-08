@@ -18,8 +18,8 @@ typedef struct
 // key was down last frame and no is released).
 typedef struct
 {
-    b8 state_changed;
-    b8 is_key_down;
+    b32 state_changed;
+    b32 is_key_down;
 } game_key_state_t;
 
 typedef struct
@@ -49,7 +49,11 @@ typedef struct
 {
     f32 player_x;
     f32 player_y;
-    b8 is_initialized;
+
+    i32 current_tile_map_x;
+    i32 current_tile_map_y;
+
+    u32 is_initialized;
 } game_state_t;
 
 typedef struct

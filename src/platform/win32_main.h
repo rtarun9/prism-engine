@@ -24,7 +24,7 @@ typedef struct
 
 typedef struct
 {
-    b8 key_states[256];
+    u8 key_states[256];
 } win32_keyboard_state_t;
 
 // To minimize memory allocators, memory is allocated upfront and used.

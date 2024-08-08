@@ -112,9 +112,10 @@ get_game_key_state(win32_keyboard_state_t *restrict current_keyboard_state,
                    unsigned char virtual_keycode)
 
 {
-    b8 is_key_down = current_keyboard_state->key_states[virtual_keycode] & 0x80;
+    b32 is_key_down =
+        current_keyboard_state->key_states[virtual_keycode] & 0x80;
 
-    b8 was_key_down =
+    b32 was_key_down =
         previous_keyboard_state->key_states[virtual_keycode] & 0x80;
 
     game_key_state_t key_state = {0};
@@ -399,9 +400,9 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
 
     // Set the windows schedular granularity level.
     const u32 windows_schedular_granularity_level = 1u;
-    b8 is_schedular_granularity_per_ms =
-        (b8)(timeBeginPeriod(windows_schedular_granularity_level) ==
-             TIMERR_NOERROR);
+    b32 is_schedular_granularity_per_ms =
+        (b32)(timeBeginPeriod(windows_schedular_granularity_level) ==
+              TIMERR_NOERROR);
 
     // Get the number of increments / counts the high performance counter
     // does in a single second. According to MSDN, the high perf counter has
@@ -788,7 +789,7 @@ LRESULT CALLBACK win32_window_proc(HWND window_handle, UINT message,
     case WM_KEYUP: {
         // NOTE: the 31st bit of lparam is 0 for WM_KEYDOWN and 1 for
         // WM_KEYUP
-        const b8 is_key_down = (lparam & (1 << 31)) == 0;
+        const b32 is_key_down = (lparam & (1 << 31)) == 0;
 
         if (is_key_down && wparam == VK_ESCAPE)
         {
