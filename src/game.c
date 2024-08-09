@@ -98,17 +98,18 @@ internal point_and_tilemap_collision_result_t check_point_and_tilemap_collision(
     game_tile_map_t *const tile_maps, const f32 x, const f32 y,
     const i32 current_tilemap_x, const i32 current_tilemap_y)
 {
+
     // TODO: Remove the hardcoded 2 value and put it in a world struct.
     game_tile_map_t *tile_map =
         (tile_maps + current_tilemap_x + current_tilemap_y * 2);
     point_and_tilemap_collision_result_t result = {0};
 
-    // Get the coordinates in the tile map.
-    i32 tile_map_coord_x = truncate_f32_to_i32(
-        x / (tile_map->tile_width * (current_tilemap_x + 1)));
+    result.tile_map_x = current_tilemap_x;
+    result.tile_map_y = current_tilemap_y;
 
-    i32 tile_map_coord_y = truncate_f32_to_i32(
-        y / (tile_map->tile_height * (current_tilemap_y + 1)));
+    // Get the coordinates in the world.
+    i32 tile_map_coord_x = truncate_f32_to_i32(x / tile_map->tile_width);
+    i32 tile_map_coord_y = truncate_f32_to_i32(y / tile_map->tile_width);
 
     // Check if there is a tilemap where the player wants to head to.
     if (tile_map_coord_x < 0)
@@ -116,7 +117,7 @@ internal point_and_tilemap_collision_result_t check_point_and_tilemap_collision(
         tile_map_coord_x = tile_map->tile_map_width + tile_map_coord_x;
         result.tile_map_x--;
     }
-    else if (tile_map_coord_x > tile_map->tile_map_width)
+    else if (tile_map_coord_x >= tile_map->tile_map_width)
     {
         tile_map_coord_x = tile_map_coord_x - tile_map->tile_map_width;
         result.tile_map_x++;
@@ -124,13 +125,13 @@ internal point_and_tilemap_collision_result_t check_point_and_tilemap_collision(
 
     if (tile_map_coord_y < 0)
     {
-        tile_map_coord_y = 0;
-        result.tile_map_y++;
+        tile_map_coord_y = tile_map->tile_map_height - ;
+        result.tile_map_y--;
     }
-    else if (tile_map_coord_y > tile_map->tile_map_height)
+    else if (tile_map_coord_y >= tile_map->tile_map_height)
     {
         tile_map_coord_y = tile_map_coord_y - tile_map->tile_map_height;
-        result.tile_map_y--;
+        result.tile_map_y++;
     }
 
     // TODO: Move this data into a world struct instead of hardcoding it.
@@ -146,7 +147,7 @@ internal point_and_tilemap_collision_result_t check_point_and_tilemap_collision(
     }
     else
     {
-        tile_map = (tile_map + result.tile_map_x + result.tile_map_y * 2);
+        tile_map = (tile_maps + result.tile_map_x + result.tile_map_y * 2);
 
         if (get_tile_map_value(tile_map, tile_map_coord_x, tile_map_coord_y) ==
             1)
@@ -207,6 +208,9 @@ __declspec(dllexport) void game_render(
 #define TILE_MAP_HEIGHT 9
 
     // NOTE: Test of dense tile map (2x2).
+    // Index of the tile maps:
+    // 00 01
+    // 10 11
     const u8 tile_map_level_10[TILE_MAP_HEIGHT][TILE_MAP_WIDTH] = {
         {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
         {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
@@ -251,6 +255,7 @@ __declspec(dllexport) void game_render(
         {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
         {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}};
 
+    // NOTE: Index is Y X, not X Y
     game_tile_map_t world_tile_maps[2][2];
 
     // The tile map changes based on where player wants to move.
@@ -366,8 +371,34 @@ __declspec(dllexport) void game_render(
                     player_position_collision_check.tile_map_y;
             }
 
-            game_state->player_x = player_new_x_position;
-            game_state->player_y = player_new_y_position;
+            // Check if the new position is out of bounds.
+            // Since the current tile map coords are updated, the player
+            // position can be set back to tile map local space.
+            if (player_new_x_position >
+                tile_map->tile_width * tile_map->tile_map_width)
+            {
+                game_state->player_x = player_new_x_position -=
+                    tile_map->tile_width * tile_map->tile_map_width;
+            }
+            else
+            {
+                game_state->player_x = player_new_x_position;
+            }
+
+            if (player_new_y_position >
+                tile_map->tile_height * tile_map->tile_map_height)
+            {
+                game_state->player_y = player_new_y_position -=
+                    tile_map->tile_height * tile_map->tile_map_height;
+            }
+            else
+            {
+                // BUG: This won't work, because in the above (if block)
+                // player_y will become in tile map coord range, but when moving
+                // to a tile map with lower y coord, this piece of code will
+                // fail.
+                game_state->player_y = player_new_y_position;
+            }
         }
     }
 
@@ -407,7 +438,9 @@ __declspec(dllexport) void game_render(
         game_state->player_x - 0.5f * player_sprite_width;
     const f32 player_top_left_y = game_state->player_y - player_sprite_height;
 
-    draw_rectangle(game_framebuffer, (f32)player_top_left_x,
-                   (f32)player_top_left_y, (f32)player_sprite_width,
-                   (f32)player_sprite_height, 1.0f, 0.0f, 0.0f);
+    draw_rectangle(
+        game_framebuffer,
+        (f32)tile_map_rendering_upper_left_offset_x + player_top_left_x,
+        (f32)tile_map_rendering_upper_left_offset_y + player_top_left_y,
+        (f32)player_sprite_width, (f32)player_sprite_height, 1.0f, 0.0f, 0.0f);
 }
