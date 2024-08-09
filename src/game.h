@@ -47,7 +47,9 @@ typedef struct
 // memory.
 typedef struct
 {
-    // NOTE: These values are GLOBAL and not per tilemap.
+    // NOTE: These values are in tile map local space (NOT global tile map
+    // space).
+    // They represent the offset from the top left tile map tile.
     f32 player_x;
     f32 player_y;
 
@@ -59,14 +61,27 @@ typedef struct
 
 typedef struct
 {
+    u8 *tile_map;
+} game_tile_map_t;
+
+#define TILE_MAP_WIDTH 17
+#define TILE_MAP_HEIGHT 9
+
+#define WORLD_TILE_MAP_WIDTH 2
+#define WORLD_TILE_MAP_HEIGHT 2
+
+typedef struct
+{
+    // This represents the number of tiles in each direction.
     i32 tile_map_width;
     i32 tile_map_height;
 
+    // Dimensions of each tile in the tile map.
     f32 tile_width;
     f32 tile_height;
 
-    u8 *tile_map;
-} game_tile_map_t;
+    game_tile_map_t *tile_maps;
+} game_world_t;
 
 // Services / interfaces provided by the platform layer to the game.
 typedef struct
