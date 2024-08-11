@@ -81,42 +81,47 @@ internal u8 get_tile_map_value(game_world_t *restrict world,
 // Returns the 'corrected' position and deconstructs information such as the
 // offset inside of a tile, the tile offset in tile map, etc.
 // Note that x and y are relative to the current tile map.
-internal deconstructed_positions_t get_deconstructed_position(
-    game_world_t *world, f32 x, f32 y, i32 tile_map_x, i32 tile_map_y)
+internal world_position_t get_world_position(game_world_t *world, f32 x, f32 y,
+                                             i32 tile_map_x, i32 tile_map_y)
 {
-    deconstructed_positions_t result = {0};
+    world_position_t result = {0};
 
-    result.tile_map_x = tile_map_x;
-    result.tile_map_y = tile_map_y;
+    i32 tile_x = truncate_f32_to_i32(floor_f32(x / world->tile_width));
+    i32 tile_y = truncate_f32_to_i32(floor_f32(y / world->tile_height));
 
-    result.tile_x = truncate_f32_to_i32(floor_f32(x / world->tile_width));
-    result.tile_y = truncate_f32_to_i32(floor_f32(y / world->tile_height));
-
-    result.tile_relative_x = x - result.tile_x * world->tile_width;
-    result.tile_relative_y = y - result.tile_y * world->tile_height;
+    result.tile_relative_x = x - tile_x * world->tile_width;
+    result.tile_relative_y = y - tile_y * world->tile_height;
 
     // Check if there is a tilemap where the player wants to head to.
-    if (result.tile_x < 0)
+    if (tile_x < 0)
     {
-        result.tile_x = world->tile_map_width - 1;
-        result.tile_map_x--;
+        tile_x = world->tile_map_width - 1;
+        tile_map_x--;
     }
-    else if (result.tile_x >= world->tile_map_width)
+    else if (tile_x >= world->tile_map_width)
     {
-        result.tile_x = 0;
-        result.tile_map_x++;
+        tile_x = 0;
+        tile_map_x++;
     }
 
-    if (result.tile_y < 0)
+    if (tile_y < 0)
     {
-        result.tile_y = world->tile_map_height - 1;
-        result.tile_map_y--;
+        tile_y = world->tile_map_height - 1;
+        tile_map_y--;
     }
-    else if (result.tile_y >= world->tile_map_height)
+    else if (tile_y >= world->tile_map_height)
     {
-        result.tile_y = 0;
-        result.tile_map_y++;
+        tile_y = 0;
+        tile_map_y++;
     }
+
+    result.tile_index_x = SET_TILE_INDEX(result.tile_index_x, tile_x);
+
+    result.tile_index_y = SET_TILE_INDEX(result.tile_index_y, tile_y);
+
+    result.tile_index_x = SET_TILE_MAP_INDEX(result.tile_index_x, tile_map_x);
+
+    result.tile_index_y = SET_TILE_MAP_INDEX(result.tile_index_y, tile_map_y);
 
     return result;
 }
@@ -137,25 +142,28 @@ internal b32 check_point_and_tilemap_collision(game_world_t *const world,
                                                const i32 current_tilemap_y)
 {
 
-    deconstructed_positions_t position = get_deconstructed_position(
-        world, x, y, current_tilemap_x, current_tilemap_y);
+    world_position_t position =
+        get_world_position(world, x, y, current_tilemap_x, current_tilemap_y);
 
     // If the player is trying to move into a tile map that doesn't exist, mark
     // the collision flag as true.
-    if (position.tile_map_x < 0 ||
-        position.tile_map_x >= WORLD_TILE_MAP_WIDTH ||
-        position.tile_map_y < 0 || position.tile_map_y >= WORLD_TILE_MAP_HEIGHT)
+    i32 tile_map_x = GET_TILE_MAP_INDEX(position.tile_index_x);
+    i32 tile_map_y = GET_TILE_MAP_INDEX(position.tile_index_y);
+
+    i32 tile_x = GET_TILE_INDEX(position.tile_index_x);
+    i32 tile_y = GET_TILE_INDEX(position.tile_index_y);
+
+    if (tile_map_x < 0 || tile_map_x >= WORLD_TILE_MAP_WIDTH ||
+        tile_map_y < 0 || tile_map_y >= WORLD_TILE_MAP_HEIGHT)
     {
         return 1;
     }
     else
     {
         game_tile_map_t *tile_map =
-            (world->tile_maps + position.tile_map_x +
-             position.tile_map_y * WORLD_TILE_MAP_WIDTH);
+            (world->tile_maps + tile_map_x + tile_map_y * WORLD_TILE_MAP_WIDTH);
 
-        if (get_tile_map_value(world, tile_map, position.tile_x,
-                               position.tile_y) == 1)
+        if (get_tile_map_value(world, tile_map, tile_x, tile_y) == 1)
         {
             return 1;
         }
@@ -189,6 +197,10 @@ __declspec(dllexport) void game_render(
         game_state->current_tile_map_x = 0;
         game_state->current_tile_map_y = 0;
 
+        // For now, it is assumed that a single meter equals 1/xth of the
+        // framebuffer width.
+        game_state->pixels_to_meters = game_framebuffer->width / 20.0f;
+
         ASSERT(platform_services != NULL);
 
         platform_file_read_result_t file_read_result =
@@ -201,10 +213,6 @@ __declspec(dllexport) void game_render(
         platform_services->platform_close_file(
             file_read_result.file_content_buffer);
     }
-
-    // Create a simple tilemap of dimensions 17 X 9.
-    // Why 17 instead of 16? so that the tile map will have a clear center
-    // pixel.
 
     // NOTE: Test of dense tile map (2x2).
     // Index of the tile maps:
@@ -264,6 +272,8 @@ __declspec(dllexport) void game_render(
     // Framebuffer's total width and height is assumed to be having a 16:9
     // aspect ratio. The width and height will be so that the tiel map entirely
     // overlaps the framebuffer.
+    // These values will be in pixels, because I want them to be the same for
+    // all screen resolutions!!
     game_world.tile_width = (f32)game_framebuffer->width / (TILE_MAP_WIDTH - 1);
     game_world.tile_height = game_world.tile_width;
 
@@ -289,8 +299,8 @@ __declspec(dllexport) void game_render(
     f32 tile_map_rendering_upper_left_offset_y = 0.0f;
 
     // Update player position based on input.
-    // Movement speed is in pixels / second.
-    f32 player_movement_speed = 4.0f;
+    // Movement speed is in meters / second.
+    f32 player_movement_speed = 0.25f * game_state->pixels_to_meters;
     f32 player_new_x_position = 0.0f;
     f32 player_new_y_position = 0.0f;
 
@@ -314,8 +324,8 @@ __declspec(dllexport) void game_render(
     // The player center is not used since the player can go near a wall,
     // but will not stop immediately as soon as the player sprite collides
     // with the wall.
-    const f32 player_sprite_width = game_world.tile_width * 0.75f;
-    const f32 player_sprite_height = game_world.tile_height * 0.9f;
+    const f32 player_sprite_width = game_state->pixels_to_meters * 0.75f;
+    const f32 player_sprite_height = game_state->pixels_to_meters * 0.9f;
 
     {
         if (!(check_point_and_tilemap_collision(
@@ -341,18 +351,22 @@ __declspec(dllexport) void game_render(
             // Note that this is ONLY done by checking the players position (i.e
             // player_position_collision_check). This should make the code
             // simpler as well.
-            deconstructed_positions_t position = get_deconstructed_position(
+            world_position_t position = get_world_position(
                 &game_world, player_new_x_position, player_new_y_position,
                 game_state->current_tile_map_x, game_state->current_tile_map_y);
 
-            game_state->current_tile_map_y = position.tile_map_y;
-            game_state->current_tile_map_x = position.tile_map_x;
+            game_state->current_tile_map_y =
+                GET_TILE_MAP_INDEX(position.tile_index_y);
+            game_state->current_tile_map_x =
+                GET_TILE_MAP_INDEX(position.tile_index_x);
 
-            game_state->player_x = position.tile_x * game_world.tile_width +
-                                   position.tile_relative_x;
+            game_state->player_x =
+                GET_TILE_INDEX(position.tile_index_x) * game_world.tile_width +
+                position.tile_relative_x;
 
-            game_state->player_y = position.tile_y * game_world.tile_height +
-                                   position.tile_relative_y;
+            game_state->player_y =
+                GET_TILE_INDEX(position.tile_index_y) * game_world.tile_height +
+                position.tile_relative_y;
         }
     }
 

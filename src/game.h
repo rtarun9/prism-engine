@@ -43,21 +43,24 @@ typedef struct
     u8 *permanent_memory;
 } game_memory_allocator_t;
 
-// NOTE: Think of a better name for this struct. Canonical? Normalized?
+#define GET_TILE_INDEX(x) (x >> 24)
+#define GET_TILE_MAP_INDEX(x) (x & 0x00ffffff)
+
+// X is the tile_index_A, and y is the value.
+#define SET_TILE_INDEX(x, y) (x & 0x00ffffff | y << 24)
+#define SET_TILE_MAP_INDEX(x, y) (x & 0xff000000 | y & 0x00ffffff)
+
 typedef struct
 {
     // The fp offset within a tile.
     f32 tile_relative_x;
     f32 tile_relative_y;
 
-    // Tile indices (related to the individual tile map).
-    i32 tile_x;
-    i32 tile_y;
-
-    // The tile map index to find out which tile map is being referenced.
-    i32 tile_map_x;
-    i32 tile_map_y;
-} deconstructed_positions_t;
+    // The 8 MSB bits are the index of tile within tile map.
+    // The other 24 bits are the index of the tile map within the world.
+    u32 tile_index_x;
+    u32 tile_index_y;
+} world_position_t;
 
 // NOTE: Game state will be stored *in* the permanent section of game
 // memory.
@@ -70,6 +73,8 @@ typedef struct
     // The current tile map the player is in.
     i32 current_tile_map_x;
     i32 current_tile_map_y;
+
+    f32 pixels_to_meters;
 
     u32 is_initialized;
 } game_state_t;
