@@ -43,16 +43,31 @@ typedef struct
     u8 *permanent_memory;
 } game_memory_allocator_t;
 
+// NOTE: Think of a better name for this struct. Canonical? Normalized?
+typedef struct
+{
+    // The fp offset within a tile.
+    f32 tile_relative_x;
+    f32 tile_relative_y;
+
+    // Tile indices (related to the individual tile map).
+    i32 tile_x;
+    i32 tile_y;
+
+    // The tile map index to find out which tile map is being referenced.
+    i32 tile_map_x;
+    i32 tile_map_y;
+} deconstructed_positions_t;
+
 // NOTE: Game state will be stored *in* the permanent section of game
 // memory.
 typedef struct
 {
-    // NOTE: These values are in tile map local space (NOT global tile map
-    // space).
-    // They represent the offset from the top left tile map tile.
+    // Relative to tile map.
     f32 player_x;
     f32 player_y;
 
+    // The current tile map the player is in.
     i32 current_tile_map_x;
     i32 current_tile_map_y;
 

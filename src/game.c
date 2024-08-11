@@ -1,37 +1,19 @@
 #include "game.h"
 
-inline i32 round_f32_to_i32(const f32 value)
-{
-    return (i32)(value + 0.5f);
-}
-
-inline u32 round_f32_to_u32(const f32 value)
-{
-    return (u32)(value + 0.5f);
-}
-
-inline i32 truncate_f32_to_i32(const f32 value)
-{
-    return (i32)(value);
-}
-
-inline u32 truncate_f32_to_u32(const f32 value)
-{
-    return (u32)(value);
-}
-
-// TODO: Use custom functions instead.
-#include <math.h>
-inline f32 floor_f32(const f32 value)
-{
-    return floorf(value);
-}
+#include "custom_math.h"
 
 // NOTE: This function takes as input the top left coords and width and height.
 void draw_rectangle(game_framebuffer_t *game_framebuffer, f32 top_left_x,
                     f32 top_left_y, f32 width, f32 height, f32 normalized_red,
                     f32 normalized_green, f32 normalized_blue)
 {
+    ASSERT(width >= 0.0f);
+    ASSERT(height >= 0.0f);
+
+    ASSERT(normalized_red >= 0.0f);
+    ASSERT(normalized_green >= 0.0f);
+    ASSERT(normalized_blue >= 0.0f);
+
     i32 min_x = round_f32_to_i32(top_left_x);
     i32 min_y = round_f32_to_i32(top_left_y);
 
@@ -87,7 +69,56 @@ internal u8 get_tile_map_value(game_world_t *restrict world,
     ASSERT(world);
     ASSERT(tile_map);
 
+    ASSERT(x >= 0);
+    ASSERT(x < TILE_MAP_WIDTH);
+
+    ASSERT(y >= 0);
+    ASSERT(y < TILE_MAP_HEIGHT);
+
     return *(tile_map->tile_map + x + y * world->tile_map_width);
+}
+
+// Returns the 'corrected' position and deconstructs information such as the
+// offset inside of a tile, the tile offset in tile map, etc.
+// Note that x and y are relative to the current tile map.
+internal deconstructed_positions_t get_deconstructed_position(
+    game_world_t *world, f32 x, f32 y, i32 tile_map_x, i32 tile_map_y)
+{
+    deconstructed_positions_t result = {0};
+
+    result.tile_map_x = tile_map_x;
+    result.tile_map_y = tile_map_y;
+
+    result.tile_x = truncate_f32_to_i32(floor_f32(x / world->tile_width));
+    result.tile_y = truncate_f32_to_i32(floor_f32(y / world->tile_height));
+
+    result.tile_relative_x = x - result.tile_x * world->tile_width;
+    result.tile_relative_y = y - result.tile_y * world->tile_height;
+
+    // Check if there is a tilemap where the player wants to head to.
+    if (result.tile_x < 0)
+    {
+        result.tile_x = world->tile_map_width - 1;
+        result.tile_map_x--;
+    }
+    else if (result.tile_x >= world->tile_map_width)
+    {
+        result.tile_x = 0;
+        result.tile_map_x++;
+    }
+
+    if (result.tile_y < 0)
+    {
+        result.tile_y = world->tile_map_height - 1;
+        result.tile_map_y--;
+    }
+    else if (result.tile_y >= world->tile_map_height)
+    {
+        result.tile_y = 0;
+        result.tile_map_y++;
+    }
+
+    return result;
 }
 
 // NOTE: If the coordinates are out of range for this tilemap, few possibilites
@@ -97,102 +128,39 @@ internal u8 get_tile_map_value(game_world_t *restrict world,
 // (ii) No tilemap is present adjacent to current tile map.
 // (iii) Tile map is present adjacent to current one, but the the point in that
 // tilemap is not empty.
-typedef struct
+
+// Returns 1 if collision has occured, and 0 if it did not.
+
+internal b32 check_point_and_tilemap_collision(game_world_t *const world,
+                                               const f32 x, const f32 y,
+                                               const i32 current_tilemap_x,
+                                               const i32 current_tilemap_y)
 {
-    b32 point_collides_with_tilemap;
 
-    // Coordinates to the tile map the point lies in.
-    i32 tile_map_x;
-    i32 tile_map_y;
-
-    // floating point value that determines the *corrected* x and y offset from
-    // the top left pixel in the tile map.
-    // NOTE: For now, these values will be truncated unless the current tile map
-    // doesn't change.
-    f32 corrected_x;
-    f32 corrected_y;
-} point_and_tilemap_collision_result_t;
-
-internal point_and_tilemap_collision_result_t check_point_and_tilemap_collision(
-    game_world_t *const world, const f32 x, const f32 y,
-    const i32 current_tilemap_x, const i32 current_tilemap_y)
-{
-    point_and_tilemap_collision_result_t result = {0};
-
-    result.tile_map_x = current_tilemap_x;
-    result.tile_map_y = current_tilemap_y;
-
-    result.corrected_x = x;
-    result.corrected_y = y;
-
-    i32 tile_map_coord_x =
-        truncate_f32_to_i32(floor_f32(x / world->tile_width));
-    i32 tile_map_coord_y =
-        truncate_f32_to_i32(floor_f32(y / world->tile_height));
-
-    // Check if there is a tilemap where the player wants to head to.
-    if (tile_map_coord_x < 0)
-    {
-        tile_map_coord_x = world->tile_map_width + tile_map_coord_x;
-        result.tile_map_x--;
-        result.corrected_x = (world->tile_map_width) * world->tile_width;
-    }
-    else if (tile_map_coord_x >= world->tile_map_width)
-    {
-        tile_map_coord_x = tile_map_coord_x - world->tile_map_width;
-        result.tile_map_x++;
-        result.corrected_x = 0;
-    }
-
-    if (tile_map_coord_y < 0)
-    {
-        tile_map_coord_y = world->tile_map_height - 1;
-        result.tile_map_y--;
-        result.corrected_y = (world->tile_map_height) * world->tile_height;
-    }
-    else if (tile_map_coord_y >= world->tile_map_height)
-    {
-        tile_map_coord_y = tile_map_coord_y - world->tile_map_height;
-        result.tile_map_y++;
-        result.corrected_y = 0;
-    }
+    deconstructed_positions_t position = get_deconstructed_position(
+        world, x, y, current_tilemap_x, current_tilemap_y);
 
     // If the player is trying to move into a tile map that doesn't exist, mark
     // the collision flag as true.
-    if (result.tile_map_x < 0 || result.tile_map_x >= WORLD_TILE_MAP_WIDTH ||
-        result.tile_map_y < 0 || result.tile_map_y >= WORLD_TILE_MAP_HEIGHT)
+    if (position.tile_map_x < 0 ||
+        position.tile_map_x >= WORLD_TILE_MAP_WIDTH ||
+        position.tile_map_y < 0 || position.tile_map_y >= WORLD_TILE_MAP_HEIGHT)
     {
-        result.point_collides_with_tilemap = 1;
-
-        result.tile_map_y = current_tilemap_y;
-        result.tile_map_x = current_tilemap_x;
-
-        result.corrected_x = x;
-        result.corrected_y = y;
-
-        return result;
+        return 1;
     }
     else
     {
-        game_tile_map_t *tile_map = (world->tile_maps + result.tile_map_x +
-                                     result.tile_map_y * WORLD_TILE_MAP_WIDTH);
+        game_tile_map_t *tile_map =
+            (world->tile_maps + position.tile_map_x +
+             position.tile_map_y * WORLD_TILE_MAP_WIDTH);
 
-        if (get_tile_map_value(world, tile_map, tile_map_coord_x,
-                               tile_map_coord_y) == 1)
+        if (get_tile_map_value(world, tile_map, position.tile_x,
+                               position.tile_y) == 1)
         {
-            // Check if collision has occured. In this case, the caller
-            // shouldn't move the player.
-            result.point_collides_with_tilemap = 1;
-        }
-        else
-        {
-            // If no collision has occured, the current tile map coordinates (in
-            // the world and relative to tile map space) can change.
-            // Tile map x and y are already updated in the code above.
-            result.point_collides_with_tilemap = 0;
+            return 1;
         }
 
-        return result;
+        return 0;
     }
 }
 
@@ -350,46 +318,41 @@ __declspec(dllexport) void game_render(
     const f32 player_sprite_height = game_world.tile_height * 0.9f;
 
     {
-        point_and_tilemap_collision_result_t player_position_collision_check =
-            check_point_and_tilemap_collision(
-                &game_world, player_new_x_position, player_new_y_position,
-                game_state->current_tile_map_x, game_state->current_tile_map_y);
+        if (!(check_point_and_tilemap_collision(
+                  &game_world, player_new_x_position, player_new_y_position,
+                  game_state->current_tile_map_x,
+                  game_state->current_tile_map_y) ||
 
-        point_and_tilemap_collision_result_t
-            player_bottom_right_corner_collision_check =
-                check_point_and_tilemap_collision(
-                    &game_world,
-                    player_new_x_position + player_sprite_width * 0.5f,
-                    player_new_y_position, game_state->current_tile_map_x,
-                    game_state->current_tile_map_y);
+              check_point_and_tilemap_collision(
+                  &game_world,
+                  player_new_x_position + player_sprite_width * 0.5f,
+                  player_new_y_position, game_state->current_tile_map_x,
+                  game_state->current_tile_map_y) ||
 
-        point_and_tilemap_collision_result_t
-            player_bottom_left_corner_collision_check =
-                check_point_and_tilemap_collision(
-                    &game_world,
-                    player_new_x_position - player_sprite_width * 0.5f,
-                    player_new_y_position, game_state->current_tile_map_x,
-                    game_state->current_tile_map_y);
-
-        // The player is 'collided' if even 1 of the checks fail.
-        if ((player_position_collision_check.point_collides_with_tilemap == 0 &&
-             player_bottom_left_corner_collision_check
-                     .point_collides_with_tilemap == 0 &&
-             player_bottom_right_corner_collision_check
-                     .point_collides_with_tilemap == 0))
+              check_point_and_tilemap_collision(
+                  &game_world,
+                  player_new_x_position - player_sprite_width * 0.5f,
+                  player_new_y_position, game_state->current_tile_map_x,
+                  game_state->current_tile_map_y)))
         {
+
             // Player can move to new position!!! Check for change in current
             // tilemap.
             // Note that this is ONLY done by checking the players position (i.e
             // player_position_collision_check). This should make the code
             // simpler as well.
-            game_state->current_tile_map_x =
-                player_position_collision_check.tile_map_x;
-            game_state->current_tile_map_y =
-                player_position_collision_check.tile_map_y;
+            deconstructed_positions_t position = get_deconstructed_position(
+                &game_world, player_new_x_position, player_new_y_position,
+                game_state->current_tile_map_x, game_state->current_tile_map_y);
 
-            game_state->player_x = player_position_collision_check.corrected_x;
-            game_state->player_y = player_position_collision_check.corrected_y;
+            game_state->current_tile_map_y = position.tile_map_y;
+            game_state->current_tile_map_x = position.tile_map_x;
+
+            game_state->player_x = position.tile_x * game_world.tile_width +
+                                   position.tile_relative_x;
+
+            game_state->player_y = position.tile_y * game_world.tile_height +
+                                   position.tile_relative_y;
         }
     }
 
