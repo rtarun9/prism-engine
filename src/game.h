@@ -44,11 +44,11 @@ typedef struct
 } game_memory_allocator_t;
 
 #define GET_TILE_INDEX(x) (x >> 24)
-#define GET_TILE_MAP_INDEX(x) (x & 0x00ffffff)
+#define GET_TILE_CHUNK_INDEX(x) (x & 0x00ffffff)
 
 // X is the tile_index_A, and y is the value.
 #define SET_TILE_INDEX(x, y) (x & 0x00ffffff | y << 24)
-#define SET_TILE_MAP_INDEX(x, y) (x & 0xff000000 | y & 0x00ffffff)
+#define SET_TILE_CHUNK_INDEX(x, y) (x & 0xff000000 | y & 0x00ffffff)
 
 typedef struct
 {
@@ -56,8 +56,8 @@ typedef struct
     f32 tile_relative_x;
     f32 tile_relative_y;
 
-    // The 8 MSB bits are the index of tile within tile map.
-    // The other 24 bits are the index of the tile map within the world.
+    // The 8 MSB bits are the index of tile within tile chunk.
+    // The other 24 bits are the index of the tile chunk within the world.
     u32 tile_index_x;
     u32 tile_index_y;
 } world_position_t;
@@ -66,13 +66,13 @@ typedef struct
 // memory.
 typedef struct
 {
-    // Relative to tile map.
+    // Relative to tile chunk.
     f32 player_x;
     f32 player_y;
 
-    // The current tile map the player is in.
-    i32 current_tile_map_x;
-    i32 current_tile_map_y;
+    // The current tile chunk the player is in.
+    i32 current_tile_chunk_x;
+    i32 current_tile_chunk_y;
 
     f32 pixels_to_meters;
 
@@ -81,26 +81,26 @@ typedef struct
 
 typedef struct
 {
-    u8 *tile_map;
-} game_tile_map_t;
+    u8 *tile_chunk;
+} game_tile_chunk_t;
 
-#define TILE_MAP_WIDTH 17
-#define TILE_MAP_HEIGHT 9
+#define TILE_CHUNK_WIDTH 64
+#define TILE_CHUNK_HEIGHT 64
 
-#define WORLD_TILE_MAP_WIDTH 2
-#define WORLD_TILE_MAP_HEIGHT 2
+#define WORLD_TILE_CHUNK_WIDTH 1
+#define WORLD_TILE_CHUNK_HEIGHT 1
 
 typedef struct
 {
     // This represents the number of tiles in each direction.
-    i32 tile_map_width;
-    i32 tile_map_height;
+    i32 tile_chunk_width;
+    i32 tile_chunk_height;
 
-    // Dimensions of each tile in the tile map.
+    // Dimensions of each tile in the tile chunk.
     f32 tile_width;
     f32 tile_height;
 
-    game_tile_map_t *tile_maps;
+    game_tile_chunk_t *tile_chunks;
 } game_world_t;
 
 // Services / interfaces provided by the platform layer to the game.

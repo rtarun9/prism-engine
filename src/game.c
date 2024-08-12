@@ -63,26 +63,66 @@ void draw_rectangle(game_framebuffer_t *game_framebuffer, f32 top_left_x,
     }
 }
 
-internal u8 get_tile_map_value(game_world_t *restrict world,
-                               game_tile_map_t *restrict tile_map, u32 x, u32 y)
+internal u8 get_value_in_tile_chunk(game_world_t *restrict world,
+                                    game_tile_chunk_t *restrict tile_chunk,
+                                    u32 x, u32 y)
 {
     ASSERT(world);
-    ASSERT(tile_map);
+    ASSERT(tile_chunk);
 
-    ASSERT(x >= 0);
-    ASSERT(x < TILE_MAP_WIDTH);
+    return *(tile_chunk->tile_chunk + x + y * world->tile_chunk_width);
+}
 
-    ASSERT(y >= 0);
-    ASSERT(y < TILE_MAP_HEIGHT);
+internal u8 get_value_of_tile_in_world(game_world_t *restrict world,
+                                       u32 absolute_tile_x, u32 absolute_tile_y)
+{
+    ASSERT(world);
 
-    return *(tile_map->tile_map + x + y * world->tile_map_width);
+    u32 chunk_x =
+        truncate_f32_to_u32((f32)absolute_tile_x / world->tile_chunk_width);
+    u32 chunk_y =
+        truncate_f32_to_u32((f32)absolute_tile_y / world->tile_chunk_height);
+
+    u32 tile_x = absolute_tile_x -
+                 truncate_f32_to_u32((f32)chunk_x * world->tile_chunk_width);
+    u32 tile_y = absolute_tile_y -
+                 truncate_f32_to_u32((f32)chunk_y * world->tile_chunk_height);
+
+    if (tile_x > TILE_CHUNK_WIDTH)
+    {
+        tile_x = 0;
+        chunk_x++;
+    }
+
+    if (tile_y > TILE_CHUNK_HEIGHT)
+    {
+        tile_y = 0;
+        chunk_y++;
+    }
+
+    // Assume a toroidal coordinate system, where if the tile chunk queried is
+    // out of bounds, it will simply wrap over.
+    if (chunk_x >= WORLD_TILE_CHUNK_WIDTH)
+    {
+        chunk_x = 0;
+    }
+
+    if (chunk_y >= WORLD_TILE_CHUNK_HEIGHT)
+    {
+        chunk_y = 0;
+    }
+
+    game_tile_chunk_t *tile_chunk =
+        world->tile_chunks + chunk_x + chunk_y * WORLD_TILE_CHUNK_WIDTH;
+
+    return get_value_in_tile_chunk(world, tile_chunk, tile_x, tile_y);
 }
 
 // Returns the 'corrected' position and deconstructs information such as the
-// offset inside of a tile, the tile offset in tile map, etc.
-// Note that x and y are relative to the current tile map.
+// offset inside of a tile, the tile offset in tile chunk, etc.
+// Note that x and y are relative to the current tile chunk.
 internal world_position_t get_world_position(game_world_t *world, f32 x, f32 y,
-                                             i32 tile_map_x, i32 tile_map_y)
+                                             i32 chunk_x, i32 chunk_y)
 {
     world_position_t result = {0};
 
@@ -95,75 +135,60 @@ internal world_position_t get_world_position(game_world_t *world, f32 x, f32 y,
     // Check if there is a tilemap where the player wants to head to.
     if (tile_x < 0)
     {
-        tile_x = world->tile_map_width - 1;
-        tile_map_x--;
+        tile_x = world->tile_chunk_width - 1;
+        chunk_x--;
     }
-    else if (tile_x >= world->tile_map_width)
+    else if (tile_x >= world->tile_chunk_width)
     {
         tile_x = 0;
-        tile_map_x++;
+        chunk_x++;
     }
 
     if (tile_y < 0)
     {
-        tile_y = world->tile_map_height - 1;
-        tile_map_y--;
+        tile_y = world->tile_chunk_height - 1;
+        chunk_y--;
     }
-    else if (tile_y >= world->tile_map_height)
+    else if (tile_y >= world->tile_chunk_height)
     {
         tile_y = 0;
-        tile_map_y++;
+        chunk_y++;
     }
 
     result.tile_index_x = SET_TILE_INDEX(result.tile_index_x, tile_x);
 
     result.tile_index_y = SET_TILE_INDEX(result.tile_index_y, tile_y);
 
-    result.tile_index_x = SET_TILE_MAP_INDEX(result.tile_index_x, tile_map_x);
+    result.tile_index_x = SET_TILE_CHUNK_INDEX(result.tile_index_x, chunk_x);
 
-    result.tile_index_y = SET_TILE_MAP_INDEX(result.tile_index_y, tile_map_y);
+    result.tile_index_y = SET_TILE_CHUNK_INDEX(result.tile_index_y, chunk_y);
 
     return result;
 }
 
-// NOTE: If the coordinates are out of range for this tilemap, few possibilites
-// are there:
-// (i) There is another tilemap (dense) that the player wants to head
-// to, and if so check if in that tilemap the point is empty.
-// (ii) No tilemap is present adjacent to current tile map.
-// (iii) Tile map is present adjacent to current one, but the the point in that
-// tilemap is not empty.
-
 // Returns 1 if collision has occured, and 0 if it did not.
-
-internal b32 check_point_and_tilemap_collision(game_world_t *const world,
-                                               const f32 x, const f32 y,
-                                               const i32 current_tilemap_x,
-                                               const i32 current_tilemap_y)
+internal b32 check_point_and_tile_chunk_collision(
+    game_world_t *const world, const f32 x, const f32 y,
+    const i32 current_tile_chunk_x, const i32 current_tile_chunk_y)
 {
 
-    world_position_t position =
-        get_world_position(world, x, y, current_tilemap_x, current_tilemap_y);
+    world_position_t position = get_world_position(
+        world, x, y, current_tile_chunk_x, current_tile_chunk_y);
 
-    // If the player is trying to move into a tile map that doesn't exist, mark
-    // the collision flag as true.
-    i32 tile_map_x = GET_TILE_MAP_INDEX(position.tile_index_x);
-    i32 tile_map_y = GET_TILE_MAP_INDEX(position.tile_index_y);
+    i32 tile_chunk_x = GET_TILE_CHUNK_INDEX(position.tile_index_x);
+    i32 tile_chunk_y = GET_TILE_CHUNK_INDEX(position.tile_index_y);
 
     i32 tile_x = GET_TILE_INDEX(position.tile_index_x);
     i32 tile_y = GET_TILE_INDEX(position.tile_index_y);
 
-    if (tile_map_x < 0 || tile_map_x >= WORLD_TILE_MAP_WIDTH ||
-        tile_map_y < 0 || tile_map_y >= WORLD_TILE_MAP_HEIGHT)
+    if (tile_chunk_x < 0 || tile_chunk_x >= WORLD_TILE_CHUNK_WIDTH ||
+        tile_chunk_y < 0 || tile_chunk_y >= WORLD_TILE_CHUNK_HEIGHT)
     {
         return 1;
     }
     else
     {
-        game_tile_map_t *tile_map =
-            (world->tile_maps + tile_map_x + tile_map_y * WORLD_TILE_MAP_WIDTH);
-
-        if (get_tile_map_value(world, tile_map, tile_x, tile_y) == 1)
+        if (get_value_of_tile_in_world(world, tile_x, tile_y) == 1)
         {
             return 1;
         }
@@ -194,8 +219,8 @@ __declspec(dllexport) void game_render(
 
         game_state->is_initialized = 1;
 
-        game_state->current_tile_map_x = 0;
-        game_state->current_tile_map_y = 0;
+        game_state->current_tile_chunk_x = 0;
+        game_state->current_tile_chunk_y = 0;
 
         // For now, it is assumed that a single meter equals 1/xth of the
         // framebuffer width.
@@ -214,89 +239,48 @@ __declspec(dllexport) void game_render(
             file_read_result.file_content_buffer);
     }
 
-    // NOTE: Test of dense tile map (2x2).
-    // Index of the tile maps:
-    // 00 01
-    // 10 11
-    const u8 tile_map_level_10[TILE_MAP_HEIGHT][TILE_MAP_WIDTH] = {
-        {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-        {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-        {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-        {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-        {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-        {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-        {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-        {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-        {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}};
+    u8 tile_map_level_00[TILE_CHUNK_HEIGHT][TILE_CHUNK_WIDTH] = {0};
 
-    const u8 tile_map_level_11[TILE_MAP_HEIGHT][TILE_MAP_WIDTH] = {
-        {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-        {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-        {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-        {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-        {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-        {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-        {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-        {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-        {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}};
+    // Set the border tiles as obstacles, and leave the rest empty.
 
-    const u8 tile_map_level_00[TILE_MAP_HEIGHT][TILE_MAP_WIDTH] = {
-        {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
-        {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-        {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-        {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-        {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-        {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-        {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-        {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-        {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}};
+    // Set the top border as obstacles.
+    for (i32 x = 0; x < TILE_CHUNK_WIDTH; x++)
+    {
+        tile_map_level_00[0][x] = 1;
+    }
 
-    const u8 tile_map_level_01[TILE_MAP_HEIGHT][TILE_MAP_WIDTH] = {
-        {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
-        {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-        {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-        {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-        {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-        {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-        {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-        {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-        {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}};
+    // Set the bottom border as obstacles.
+    for (i32 x = 0; x < TILE_CHUNK_WIDTH; x++)
+    {
+        tile_map_level_00[TILE_CHUNK_HEIGHT - 1][x] = 1;
+    }
 
-    // NOTE: Index is Y X, not X Y
+    // Set the left border as obstacles.
+    for (i32 y = 0; y < TILE_CHUNK_HEIGHT; y++)
+    {
+        tile_map_level_00[y][0] = 1;
+    }
+
+    // Set the right border as obstacles.
+    for (i32 y = 0; y < TILE_CHUNK_HEIGHT; y++)
+    {
+        tile_map_level_00[y][TILE_CHUNK_WIDTH - 1] = 1;
+    }
+
     game_world_t game_world = {0};
-    game_world.tile_map_width = TILE_MAP_WIDTH;
-    game_world.tile_map_height = TILE_MAP_HEIGHT;
+    game_world.tile_chunk_width = TILE_CHUNK_WIDTH;
+    game_world.tile_chunk_height = TILE_CHUNK_HEIGHT;
 
-    // NOTE:
-    // So this math logic is a bit weird, so get ready :
-    // Framebuffer's total width and height is assumed to be having a 16:9
-    // aspect ratio. The width and height will be so that the tiel map entirely
-    // overlaps the framebuffer.
-    // These values will be in pixels, because I want them to be the same for
-    // all screen resolutions!!
-    game_world.tile_width = (f32)game_framebuffer->width / (TILE_MAP_WIDTH - 1);
+    game_world.tile_width = game_state->pixels_to_meters;
     game_world.tile_height = game_world.tile_width;
 
-    game_tile_map_t tile_maps[WORLD_TILE_MAP_HEIGHT][WORLD_TILE_MAP_WIDTH] = {
-        0};
-    tile_maps[0][0].tile_map = (u8 *)tile_map_level_00;
-    tile_maps[0][1].tile_map = (u8 *)tile_map_level_01;
-    tile_maps[1][0].tile_map = (u8 *)tile_map_level_10;
-    tile_maps[1][1].tile_map = (u8 *)tile_map_level_11;
+    game_tile_chunk_t tile_chunks[WORLD_TILE_CHUNK_HEIGHT]
+                                 [WORLD_TILE_CHUNK_WIDTH] = {0};
+    tile_chunks[0][0].tile_chunk = (u8 *)tile_map_level_00;
 
-    game_world.tile_maps = (game_tile_map_t *)tile_maps;
+    game_world.tile_chunks = (game_tile_chunk_t *)tile_chunks;
 
     // Clear the screen.
-
-    // Rendering offsets.
-    // This is done because the tile width and tile map width are not the same
-    // (see the division by 16 for tile width and number of columns of tile
-    // map).
-    // The borders aren't too important, and its fine if (atleast in the X
-    // direction) only 1/2 of the tile in the left and right border is seen.
-    f32 tile_map_rendering_upper_left_offset_x =
-        -(f32)game_world.tile_width / 2.0f;
-    f32 tile_map_rendering_upper_left_offset_y = 0.0f;
 
     // Update player position based on input.
     // Movement speed is in meters / second.
@@ -328,22 +312,22 @@ __declspec(dllexport) void game_render(
     const f32 player_sprite_height = game_state->pixels_to_meters * 0.9f;
 
     {
-        if (!(check_point_and_tilemap_collision(
+        if (!(check_point_and_tile_chunk_collision(
                   &game_world, player_new_x_position, player_new_y_position,
-                  game_state->current_tile_map_x,
-                  game_state->current_tile_map_y) ||
+                  game_state->current_tile_chunk_x,
+                  game_state->current_tile_chunk_y) ||
 
-              check_point_and_tilemap_collision(
+              check_point_and_tile_chunk_collision(
                   &game_world,
                   player_new_x_position + player_sprite_width * 0.5f,
-                  player_new_y_position, game_state->current_tile_map_x,
-                  game_state->current_tile_map_y) ||
+                  player_new_y_position, game_state->current_tile_chunk_x,
+                  game_state->current_tile_chunk_y) ||
 
-              check_point_and_tilemap_collision(
+              check_point_and_tile_chunk_collision(
                   &game_world,
                   player_new_x_position - player_sprite_width * 0.5f,
-                  player_new_y_position, game_state->current_tile_map_x,
-                  game_state->current_tile_map_y)))
+                  player_new_y_position, game_state->current_tile_chunk_x,
+                  game_state->current_tile_chunk_y)))
         {
 
             // Player can move to new position!!! Check for change in current
@@ -353,12 +337,13 @@ __declspec(dllexport) void game_render(
             // simpler as well.
             world_position_t position = get_world_position(
                 &game_world, player_new_x_position, player_new_y_position,
-                game_state->current_tile_map_x, game_state->current_tile_map_y);
+                game_state->current_tile_chunk_x,
+                game_state->current_tile_chunk_y);
 
-            game_state->current_tile_map_y =
-                GET_TILE_MAP_INDEX(position.tile_index_y);
-            game_state->current_tile_map_x =
-                GET_TILE_MAP_INDEX(position.tile_index_x);
+            game_state->current_tile_chunk_y =
+                GET_TILE_CHUNK_INDEX(position.tile_index_y);
+            game_state->current_tile_chunk_x =
+                GET_TILE_CHUNK_INDEX(position.tile_index_x);
 
             game_state->player_x =
                 GET_TILE_INDEX(position.tile_index_x) * game_world.tile_width +
@@ -370,25 +355,65 @@ __declspec(dllexport) void game_render(
         }
     }
 
-    game_tile_map_t *tile_map =
-        ((game_tile_map_t *)game_world.tile_maps +
-         game_state->current_tile_map_x +
-         game_state->current_tile_map_y * WORLD_TILE_MAP_WIDTH);
-
     // Clear screen.
     draw_rectangle(game_framebuffer, 0.0f, 0.0f, (f32)game_framebuffer->width,
                    (f32)game_framebuffer->height, 1.0f, 0.0f, 0.0f);
-    // Draw the tile map.
-    for (i32 y = 0; y < TILE_MAP_HEIGHT; ++y)
-    {
-        for (i32 x = 0; x < TILE_MAP_WIDTH; ++x)
-        {
-            const f32 top_left_x = tile_map_rendering_upper_left_offset_x +
-                                   x * game_world.tile_width;
-            const f32 top_left_y = tile_map_rendering_upper_left_offset_y +
-                                   y * game_world.tile_height;
 
-            if (get_tile_map_value(&game_world, tile_map, x, y) == 1)
+    // Draw the tile map.
+    // This draws all the tiles (or atleast as much as possible).
+    // What I want is for the player to be at the center, so x and y is the tile
+    // indices that are around the player.
+    world_position_t player_position = get_world_position(
+        &game_world, game_state->player_x, game_state->player_y,
+        game_state->current_tile_chunk_x, game_state->current_tile_chunk_y);
+
+    // At any moment of time, the number of tiles that can be viewed on the
+    // screen is FIXED.
+    // Because of the offset applied, it makes sense to have a extra tile to
+    // view (which may very well be culled) in each direction.
+    const i32 tiles_viewed_x =
+        truncate_f32_to_i32(game_framebuffer->width / game_world.tile_width) +
+        1;
+
+    const i32 tiles_viewed_y =
+        truncate_f32_to_i32(game_framebuffer->height / game_world.tile_height) +
+        1;
+
+    // Rendering offsets. The value are computed such that the player is at the
+    // center of the screen.
+    f32 tile_map_rendering_upper_left_offset_x =
+        -(f32)game_world.tile_width / 2.0f +
+        +(GET_TILE_INDEX(player_position.tile_index_x) * game_world.tile_width);
+
+    f32 tile_map_rendering_upper_left_offset_y =
+        0.0f + -(GET_TILE_INDEX(player_position.tile_index_y) *
+                 game_world.tile_height);
+
+    for (i32 _y = -tiles_viewed_y / 2; _y < tiles_viewed_y / 2; ++_y)
+    {
+        for (i32 _x = -tiles_viewed_x / 2; _x < tiles_viewed_x / 2; ++_x)
+        {
+            // Compute x and y tile index such that the tiles visualized are
+            // around the player.
+            i32 x = _x + GET_TILE_INDEX(player_position.tile_index_x);
+            i32 y = _y + GET_TILE_INDEX(player_position.tile_index_y);
+
+            // When x and y are zero, that tile
+            // should be rendered at the center
+            // of the screen.
+            f32 top_left_x = tile_map_rendering_upper_left_offset_x +
+                             game_world.tile_width * (x);
+
+            f32 top_left_y = tile_map_rendering_upper_left_offset_y +
+                             (y)*game_world.tile_height;
+
+            if (_x == 0 && _y == 0)
+            {
+                draw_rectangle(game_framebuffer, (f32)top_left_x,
+                               (f32)top_left_y, (f32)game_world.tile_width,
+                               (f32)game_world.tile_height, 0.0f, 0.0f, 1.0f);
+            }
+            else if (get_value_of_tile_in_world(&game_world, x, y))
             {
                 draw_rectangle(game_framebuffer, (f32)top_left_x,
                                (f32)top_left_y, (f32)game_world.tile_width,
