@@ -62,23 +62,6 @@ typedef struct
     u32 tile_index_y;
 } world_position_t;
 
-// NOTE: Game state will be stored *in* the permanent section of game
-// memory.
-typedef struct
-{
-    // Relative to tile chunk.
-    f32 player_x;
-    f32 player_y;
-
-    // The current tile chunk the player is in.
-    i32 current_tile_chunk_x;
-    i32 current_tile_chunk_y;
-
-    f32 pixels_to_meters;
-
-    u32 is_initialized;
-} game_state_t;
-
 typedef struct
 {
     u8 *tile_chunk;
@@ -90,6 +73,7 @@ typedef struct
 #define WORLD_TILE_CHUNK_WIDTH 1
 #define WORLD_TILE_CHUNK_HEIGHT 1
 
+// NOTE: Game state will be stored *in* the permanent section of game memory.
 typedef struct
 {
     // This represents the number of tiles in each direction.
@@ -102,6 +86,36 @@ typedef struct
 
     game_tile_chunk_t *tile_chunks;
 } game_world_t;
+
+// NOTE: The permanent section of memory is used by the game state. However, for
+// ease of management the memory arena is used to divide the permanent section
+// into various sections (like game state, tile maps, etc).
+typedef struct
+{
+    size_t memory_block_size;
+    size_t memory_used;
+
+    // NOTE: Not static!!!
+    u8 *memory_block;
+} game_memory_arena_t;
+
+typedef struct
+{
+    // Relative to tile chunk.
+    f32 player_x;
+    f32 player_y;
+
+    // The current tile chunk the player is in.
+    i32 current_tile_chunk_x;
+    i32 current_tile_chunk_y;
+
+    f32 pixels_to_meters;
+
+    game_world_t *game_world;
+    game_memory_arena_t memory_arena;
+
+    u32 is_initialized;
+} game_state_t;
 
 // Services / interfaces provided by the platform layer to the game.
 typedef struct
