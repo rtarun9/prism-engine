@@ -30,4 +30,9 @@ inline f32 floor_f32(const f32 value)
     return floorf(value);
 }
 
+inline i32 floor_f32_to_i32(const f32 value)
+{
+    return (i32)floorf(value);
+}
+
 #endif

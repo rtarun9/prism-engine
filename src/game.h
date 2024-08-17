@@ -69,11 +69,11 @@ typedef struct
     u8 *tile_chunk;
 } game_tile_chunk_t;
 
-#define NUMBER_OF_TILES_PER_CHUNK_X 8
-#define NUMBER_OF_TILES_PER_CHUNK_Y 8
+#define NUMBER_OF_TILES_PER_CHUNK_X 9
+#define NUMBER_OF_TILES_PER_CHUNK_Y 9
 
-#define NUMBER_OF_CHUNKS_IN_WORLD_X 2
-#define NUMBER_OF_CHUNKS_IN_WORLD_Y 2
+#define NUMBER_OF_CHUNKS_IN_WORLD_X 4
+#define NUMBER_OF_CHUNKS_IN_WORLD_Y 4
 
 // NOTE: Game state will be stored *in* the permanent section of game memory.
 typedef struct
