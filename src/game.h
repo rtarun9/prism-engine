@@ -6,6 +6,8 @@
 // code.
 #include "common.h"
 
+#include "arena_allocator.h"
+
 typedef struct
 {
     u8 *backbuffer_memory;
@@ -70,8 +72,8 @@ typedef struct
 #define TILE_CHUNK_WIDTH 64
 #define TILE_CHUNK_HEIGHT 64
 
-#define WORLD_TILE_CHUNK_WIDTH 1
-#define WORLD_TILE_CHUNK_HEIGHT 1
+#define WORLD_TILE_CHUNK_WIDTH 2
+#define WORLD_TILE_CHUNK_HEIGHT 2
 
 // NOTE: Game state will be stored *in* the permanent section of game memory.
 typedef struct
@@ -87,18 +89,6 @@ typedef struct
     game_tile_chunk_t *tile_chunks;
 } game_world_t;
 
-// NOTE: The permanent section of memory is used by the game state. However, for
-// ease of management the memory arena is used to divide the permanent section
-// into various sections (like game state, tile maps, etc).
-typedef struct
-{
-    size_t memory_block_size;
-    size_t memory_used;
-
-    // NOTE: Not static!!!
-    u8 *memory_block;
-} game_memory_arena_t;
-
 typedef struct
 {
     // Relative to tile chunk.
@@ -112,7 +102,7 @@ typedef struct
     f32 pixels_to_meters;
 
     game_world_t *game_world;
-    game_memory_arena_t memory_arena;
+    arena_allocator_t memory_arena;
 
     u32 is_initialized;
 } game_state_t;

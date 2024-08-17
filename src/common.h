@@ -27,6 +27,7 @@ typedef double f64;
 #define local_persist static
 
 // #defines that are related to memory.
+#define BYTE(x) (x)
 #define KILOBYTE(x) (x * 1024LL)
 #define MEGABYTE(x) (KILOBYTE(x) * 1024LL)
 #define GIGABYTE(x) (MEGABYTE(x) * 1024LL)
@@ -54,6 +55,31 @@ internal u64 get_nearest_multiple(u64 value, u64 multiple)
     }
 
     return value + multiple - (value % multiple);
+}
+
+internal i32 is_power_of_2(size_t value)
+{ // In binary, if a number if a power of 2,
+  // then only a SINGLE bit will be set.
+  // Moreoever, value - 1 will be all 1's.
+
+    return (value != 0) && (value & (value - 1)) == 0;
+}
+
+internal u8 *align_memory_address(u8 *value, size_t alignment_size)
+{
+    ASSERT(is_power_of_2(alignment_size) == 1);
+
+    // As alignment size will be a power of 2, to do a fast modulus operator
+    // doing value & (alignment_size - 1) will be sufficient.
+    size_t modulo = (size_t)value & (alignment_size - 1);
+    size_t result = (size_t)value;
+
+    if (modulo != 0)
+    {
+        result += alignment_size - modulo;
+    }
+
+    return (u8 *)result;
 }
 
 #endif
