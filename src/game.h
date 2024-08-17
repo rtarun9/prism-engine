@@ -69,19 +69,15 @@ typedef struct
     u8 *tile_chunk;
 } game_tile_chunk_t;
 
-#define TILE_CHUNK_WIDTH 64
-#define TILE_CHUNK_HEIGHT 64
+#define NUMBER_OF_TILES_PER_CHUNK_X 8
+#define NUMBER_OF_TILES_PER_CHUNK_Y 8
 
-#define WORLD_TILE_CHUNK_WIDTH 2
-#define WORLD_TILE_CHUNK_HEIGHT 2
+#define NUMBER_OF_CHUNKS_IN_WORLD_X 2
+#define NUMBER_OF_CHUNKS_IN_WORLD_Y 2
 
 // NOTE: Game state will be stored *in* the permanent section of game memory.
 typedef struct
 {
-    // This represents the number of tiles in each direction.
-    i32 tile_chunk_width;
-    i32 tile_chunk_height;
-
     // Dimensions of each tile in the tile chunk.
     f32 tile_width;
     f32 tile_height;

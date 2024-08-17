@@ -65,6 +65,73 @@ void draw_rectangle(game_framebuffer_t *game_framebuffer, f32 top_left_x,
     }
 }
 
+// The 'corrected' tile and tile chunk indices.
+typedef struct
+{
+    u32 tile_x;
+    u32 tile_y;
+
+    u32 chunk_x;
+    u32 chunk_y;
+} corrected_tile_indices_t;
+
+internal corrected_tile_indices_t get_corrected_tile_indices(i32 tile_x,
+                                                             i32 tile_y,
+                                                             i32 chunk_x,
+                                                             i32 chunk_y)
+{
+    corrected_tile_indices_t result = {0};
+
+    if (tile_x < 0)
+    {
+        tile_x = NUMBER_OF_TILES_PER_CHUNK_X - 1;
+        chunk_x--;
+    }
+    else if (tile_x >= NUMBER_OF_TILES_PER_CHUNK_X)
+    {
+        tile_x = 0;
+        chunk_x++;
+    }
+
+    if (tile_y < 0)
+    {
+        tile_y = NUMBER_OF_TILES_PER_CHUNK_Y - 1;
+        chunk_y--;
+    }
+    else if (tile_y >= NUMBER_OF_TILES_PER_CHUNK_Y)
+    {
+        tile_y = 0;
+        chunk_y++;
+    }
+
+    if (chunk_x < 0)
+    {
+        chunk_x = 0;
+    }
+    else if (chunk_x > NUMBER_OF_CHUNKS_IN_WORLD_X)
+    {
+        chunk_x = NUMBER_OF_CHUNKS_IN_WORLD_X - 1;
+    }
+
+    if (chunk_y < 0)
+    {
+        chunk_y = 0;
+    }
+    else if (chunk_y > NUMBER_OF_CHUNKS_IN_WORLD_Y)
+    {
+        chunk_y = NUMBER_OF_CHUNKS_IN_WORLD_Y - 1;
+    }
+
+    result.tile_x = tile_x;
+    result.tile_y = tile_y;
+
+    result.chunk_x = chunk_x;
+    result.chunk_x = chunk_x;
+
+    return result;
+}
+
+// NOTE: Assumes that the tile x / y and chunk x / y values are corrected.
 internal u8 get_value_in_tile_chunk(game_world_t *restrict world,
                                     game_tile_chunk_t *restrict tile_chunk,
                                     u32 x, u32 y)
@@ -72,52 +139,21 @@ internal u8 get_value_in_tile_chunk(game_world_t *restrict world,
     ASSERT(world);
     ASSERT(tile_chunk);
 
-    return *(tile_chunk->tile_chunk + x + y * world->tile_chunk_width);
+    return *(tile_chunk->tile_chunk + x + y * NUMBER_OF_TILES_PER_CHUNK_X);
 }
 
+// NOTE: Assumes that the tile x / y and chunk x / y values are corrected.
 internal u8 get_value_of_tile_in_world(game_world_t *restrict world,
-                                       u32 absolute_tile_x, u32 absolute_tile_y)
+                                       corrected_tile_indices_t tile_indices)
 {
     ASSERT(world);
 
-    u32 chunk_x =
-        truncate_f32_to_u32((f32)absolute_tile_x / world->tile_chunk_width);
-    u32 chunk_y =
-        truncate_f32_to_u32((f32)absolute_tile_y / world->tile_chunk_height);
-
-    u32 tile_x = absolute_tile_x -
-                 truncate_f32_to_u32((f32)chunk_x * world->tile_chunk_width);
-    u32 tile_y = absolute_tile_y -
-                 truncate_f32_to_u32((f32)chunk_y * world->tile_chunk_height);
-
-    if (tile_x > TILE_CHUNK_WIDTH)
-    {
-        tile_x = 0;
-        chunk_x++;
-    }
-
-    if (tile_y > TILE_CHUNK_HEIGHT)
-    {
-        tile_y = 0;
-        chunk_y++;
-    }
-
-    // Assume a toroidal coordinate system, where if the tile chunk queried is
-    // out of bounds, it will simply wrap over.
-    if (chunk_x >= WORLD_TILE_CHUNK_WIDTH)
-    {
-        chunk_x = 0;
-    }
-
-    if (chunk_y >= WORLD_TILE_CHUNK_HEIGHT)
-    {
-        chunk_y = 0;
-    }
-
     game_tile_chunk_t *tile_chunk =
-        world->tile_chunks + chunk_x + chunk_y * WORLD_TILE_CHUNK_WIDTH;
+        world->tile_chunks + tile_indices.chunk_x +
+        tile_indices.chunk_y * NUMBER_OF_CHUNKS_IN_WORLD_X;
 
-    return get_value_in_tile_chunk(world, tile_chunk, tile_x, tile_y);
+    return get_value_in_tile_chunk(world, tile_chunk, tile_indices.tile_x,
+                                   tile_indices.tile_y);
 }
 
 // Returns the 'corrected' position and deconstructs information such as the
@@ -131,39 +167,26 @@ internal world_position_t get_world_position(game_world_t *world, f32 x, f32 y,
     i32 tile_x = truncate_f32_to_i32(floor_f32(x / world->tile_width));
     i32 tile_y = truncate_f32_to_i32(floor_f32(y / world->tile_height));
 
-    result.tile_relative_x = x - tile_x * world->tile_width;
-    result.tile_relative_y = y - tile_y * world->tile_height;
+    corrected_tile_indices_t corrected_tile_indices =
+        get_corrected_tile_indices(tile_x, tile_y, chunk_x, chunk_y);
+
+    result.tile_relative_x =
+        x - corrected_tile_indices.tile_x * world->tile_width;
+    result.tile_relative_y =
+        y - corrected_tile_indices.tile_y * world->tile_height;
 
     // Check if there is a tilemap where the player wants to head to.
-    if (tile_x < 0)
-    {
-        tile_x = world->tile_chunk_width - 1;
-        chunk_x--;
-    }
-    else if (tile_x >= world->tile_chunk_width)
-    {
-        tile_x = 0;
-        chunk_x++;
-    }
+    result.tile_index_x =
+        SET_TILE_INDEX(result.tile_index_x, corrected_tile_indices.tile_x);
 
-    if (tile_y < 0)
-    {
-        tile_y = world->tile_chunk_height - 1;
-        chunk_y--;
-    }
-    else if (tile_y >= world->tile_chunk_height)
-    {
-        tile_y = 0;
-        chunk_y++;
-    }
+    result.tile_index_y =
+        SET_TILE_INDEX(result.tile_index_y, corrected_tile_indices.tile_y);
 
-    result.tile_index_x = SET_TILE_INDEX(result.tile_index_x, tile_x);
+    result.tile_index_x = SET_TILE_CHUNK_INDEX(result.tile_index_x,
+                                               corrected_tile_indices.chunk_x);
 
-    result.tile_index_y = SET_TILE_INDEX(result.tile_index_y, tile_y);
-
-    result.tile_index_x = SET_TILE_CHUNK_INDEX(result.tile_index_x, chunk_x);
-
-    result.tile_index_y = SET_TILE_CHUNK_INDEX(result.tile_index_y, chunk_y);
+    result.tile_index_y = SET_TILE_CHUNK_INDEX(result.tile_index_y,
+                                               corrected_tile_indices.chunk_y);
 
     return result;
 }
@@ -177,30 +200,21 @@ internal b32 check_point_and_tile_chunk_collision(
     world_position_t position = get_world_position(
         world, x, y, current_tile_chunk_x, current_tile_chunk_y);
 
-    i32 tile_chunk_x = GET_TILE_CHUNK_INDEX(position.tile_index_x);
-    i32 tile_chunk_y = GET_TILE_CHUNK_INDEX(position.tile_index_y);
+    i32 chunk_x = GET_TILE_CHUNK_INDEX(position.tile_index_x);
+    i32 chunk_y = GET_TILE_CHUNK_INDEX(position.tile_index_y);
 
     i32 tile_x = GET_TILE_INDEX(position.tile_index_x);
     i32 tile_y = GET_TILE_INDEX(position.tile_index_y);
 
-    if (tile_chunk_x < 0 || tile_chunk_x >= WORLD_TILE_CHUNK_WIDTH ||
-        tile_chunk_y < 0 || tile_chunk_y >= WORLD_TILE_CHUNK_HEIGHT)
+    corrected_tile_indices_t tile_indices =
+        get_corrected_tile_indices(tile_x, tile_y, chunk_x, chunk_y);
+
+    if (get_value_of_tile_in_world(world, tile_indices))
     {
         return 1;
     }
-    else
-    {
-        u32 absolute_tile_x = tile_x * (tile_chunk_x + 1);
-        u32 absolute_tile_y = tile_y * (tile_chunk_y + 1);
 
-        if (get_value_of_tile_in_world(world, absolute_tile_x,
-                                       absolute_tile_y) == 1)
-        {
-            return 1;
-        }
-
-        return 0;
-    }
+    return 0;
 }
 
 __declspec(dllexport) void game_render(
@@ -220,7 +234,6 @@ __declspec(dllexport) void game_render(
 
     if (!game_state->is_initialized)
     {
-
         // For now, it is assumed that a single meter equals 1/xth of the
         // framebuffer width.
         game_state->pixels_to_meters = game_framebuffer->width / 20.0f;
@@ -247,68 +260,67 @@ __declspec(dllexport) void game_render(
         game_world_t *game_world = (game_world_t *)arena_alloc_default_aligned(
             &game_state->memory_arena, sizeof(game_world_t));
 
-        game_world->tile_chunk_width = TILE_CHUNK_WIDTH;
-        game_world->tile_chunk_height = TILE_CHUNK_HEIGHT;
-
         game_world->tile_width = game_state->pixels_to_meters;
         game_world->tile_height = game_world->tile_width;
 
         game_world->tile_chunks = (game_tile_chunk_t *)arena_alloc_array(
             &game_state->memory_arena,
-            WORLD_TILE_CHUNK_WIDTH * WORLD_TILE_CHUNK_HEIGHT,
+            NUMBER_OF_CHUNKS_IN_WORLD_X * NUMBER_OF_CHUNKS_IN_WORLD_X,
             sizeof(game_tile_chunk_t), DEFAULT_ALIGNMENT_VALUE);
 
         game_state->game_world = game_world;
 
         // Setup a basic tile chunk.
-        for (i32 i = 0; i < WORLD_TILE_CHUNK_HEIGHT; i++)
+        for (i32 i = 0; i < NUMBER_OF_CHUNKS_IN_WORLD_X; i++)
         {
-            for (i32 j = 0; j < WORLD_TILE_CHUNK_WIDTH; j++)
+            for (i32 j = 0; j < NUMBER_OF_CHUNKS_IN_WORLD_X; j++)
             {
                 game_tile_chunk_t *basic_tile_chunk =
-                    (game_world->tile_chunks + j + i * WORLD_TILE_CHUNK_WIDTH);
+                    (game_world->tile_chunks + j +
+                     i * NUMBER_OF_CHUNKS_IN_WORLD_X);
 
                 basic_tile_chunk->tile_chunk = (u8 *)arena_alloc_array(
                     &game_state->memory_arena,
-                    TILE_CHUNK_WIDTH * TILE_CHUNK_HEIGHT, sizeof(u8),
-                    DEFAULT_ALIGNMENT_VALUE);
+                    NUMBER_OF_TILES_PER_CHUNK_X * NUMBER_OF_TILES_PER_CHUNK_Y,
+                    sizeof(u8), DEFAULT_ALIGNMENT_VALUE);
 
                 /*
                 // Set the top border as obstacles.
-                for (i32 x = 0; x < TILE_CHUNK_WIDTH; x++)
+                for (i32 x = 0; x < NUMBER_OF_TILES_PER_CHUNK_X; x++)
                 {
                     *(basic_tile_chunk->tile_chunk + x) = 1;
                 }
 
                 // Set the bottom border as obstacles.
-                for (i32 x = 0; x < TILE_CHUNK_WIDTH; x++)
+                for (i32 x = 0; x < NUMBER_OF_TILES_PER_CHUNK_X; x++)
                 {
-                    *(basic_tile_chunk->tile_chunk + x + TILE_CHUNK_HEIGHT -
-                      1 * TILE_CHUNK_WIDTH) = 0;
+                    *(basic_tile_chunk->tile_chunk + x +
+                NUMBER_OF_TILES_PER_CHUNK_Y - 1 * NUMBER_OF_TILES_PER_CHUNK_X) =
+                0;
                 }
 
                 // Set the left border as obstacles.
-                for (i32 y = 0; y < TILE_CHUNK_HEIGHT; y++)
+                for (i32 y = 0; y < NUMBER_OF_TILES_PER_CHUNK_Y; y++)
                 {
-                    *(basic_tile_chunk->tile_chunk + 0 + y * TILE_CHUNK_WIDTH) =
-                        1;
+                    *(basic_tile_chunk->tile_chunk + 0 + y *
+                NUMBER_OF_TILES_PER_CHUNK_X) = 1;
                 }
 
                 // Set the right border as obstacles.
-                for (i32 y = 0; y < TILE_CHUNK_HEIGHT; y++)
+                for (i32 y = 0; y < NUMBER_OF_TILES_PER_CHUNK_Y; y++)
                 {
-                    *(basic_tile_chunk->tile_chunk + TILE_CHUNK_WIDTH - 1 +
-                      y * TILE_CHUNK_WIDTH) = 1;
+                    *(basic_tile_chunk->tile_chunk + NUMBER_OF_TILES_PER_CHUNK_X
+                - 1 + y * NUMBER_OF_TILES_PER_CHUNK_X) = 1;
                 }
                  */
-                for (i32 y = 0; y < TILE_CHUNK_HEIGHT; y++)
+                for (i32 y = 0; y < NUMBER_OF_TILES_PER_CHUNK_Y; y++)
                 {
-                    for (i32 x = 0; x < TILE_CHUNK_WIDTH; x++)
+                    for (i32 x = 0; x < NUMBER_OF_TILES_PER_CHUNK_X; x++)
                     {
                         if (x % 2 == 0 && y % 2 == 0)
                         {
                             *(basic_tile_chunk->tile_chunk + x +
-                              y * TILE_CHUNK_WIDTH) = 1;
+                              y * NUMBER_OF_TILES_PER_CHUNK_X) = 1;
                         }
                     }
                 }
@@ -443,8 +455,6 @@ __declspec(dllexport) void game_render(
     {
         for (i32 _x = -tiles_viewed_x / 2; _x <= tiles_viewed_x / 2; ++_x)
         {
-            // Compute x and y tile index such that the tiles visualized
-            // are around the player.
             i32 x = _x + GET_TILE_INDEX(player_position.tile_index_x);
             i32 y = _y + GET_TILE_INDEX(player_position.tile_index_y);
 
@@ -457,13 +467,11 @@ __declspec(dllexport) void game_render(
             f32 top_left_y = tile_map_rendering_upper_left_offset_y +
                              (y)*game_world->tile_height;
 
-            if (_x == 0 && _y == 0)
-            {
-                draw_rectangle(game_framebuffer, (f32)top_left_x,
-                               (f32)top_left_y, (f32)game_world->tile_width,
-                               (f32)game_world->tile_height, 0.0f, 0.0f, 1.0f);
-            }
-            else if (get_value_of_tile_in_world(game_world, x, y))
+            corrected_tile_indices_t tile_indices = get_corrected_tile_indices(
+                x, y, GET_TILE_CHUNK_INDEX(player_position.tile_index_x),
+                GET_TILE_CHUNK_INDEX(player_position.tile_index_y));
+
+            if (get_value_of_tile_in_world(game_world, tile_indices))
             {
                 draw_rectangle(game_framebuffer, (f32)top_left_x,
                                (f32)top_left_y, (f32)game_world->tile_width,
