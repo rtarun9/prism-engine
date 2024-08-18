@@ -87,29 +87,38 @@ internal corrected_tile_indices_t get_corrected_tile_indices(i32 tile_x,
         // How far should chunk_x go down by? Not 1, in case tile_x is negative
         // and abs(tile_x) > number of tiles per chunk. Similar logic applies
         // for y.
-        chunk_x -= floor_f32_to_i32(tile_x / (f32)NUMBER_OF_TILES_PER_CHUNK_X);
-        tile_x += chunk_x * NUMBER_OF_TILES_PER_CHUNK_X;
+        i32 chunks_to_shift =
+            floor_f32_to_i32(tile_x / (f32)NUMBER_OF_TILES_PER_CHUNK_X);
+        chunk_x += chunks_to_shift;
+        tile_x -= chunks_to_shift * NUMBER_OF_TILES_PER_CHUNK_X;
     }
     else if (tile_x >= NUMBER_OF_TILES_PER_CHUNK_X)
     {
-        chunk_x += floor_f32_to_i32(tile_x / (f32)NUMBER_OF_TILES_PER_CHUNK_X);
-        tile_x = tile_x % NUMBER_OF_TILES_PER_CHUNK_X;
+        i32 chunks_to_shift =
+            floor_f32_to_i32(tile_x / (f32)NUMBER_OF_TILES_PER_CHUNK_X);
+        chunk_x += chunks_to_shift;
+        tile_x -= chunks_to_shift * NUMBER_OF_TILES_PER_CHUNK_X;
     }
 
     if (tile_y < 0)
     {
-        chunk_y -= floor_f32_to_i32(tile_y / (f32)NUMBER_OF_TILES_PER_CHUNK_Y);
-        tile_y += chunk_y * NUMBER_OF_TILES_PER_CHUNK_Y;
+        i32 chunks_to_shift =
+            floor_f32_to_i32(tile_y / (f32)NUMBER_OF_TILES_PER_CHUNK_Y);
+        chunk_y -= chunks_to_shift;
+        tile_y -= chunks_to_shift * NUMBER_OF_TILES_PER_CHUNK_Y;
     }
     else if (tile_y >= NUMBER_OF_TILES_PER_CHUNK_Y)
     {
-        chunk_y += floor_f32_to_i32(tile_y / (f32)NUMBER_OF_TILES_PER_CHUNK_Y);
-        tile_y -= chunk_y * NUMBER_OF_TILES_PER_CHUNK_Y;
+        i32 chunks_to_shift =
+            floor_f32_to_i32(tile_y / (f32)NUMBER_OF_TILES_PER_CHUNK_Y);
+        chunk_y -= chunks_to_shift;
+        tile_y -= chunks_to_shift * NUMBER_OF_TILES_PER_CHUNK_Y;
     }
 
     if (chunk_x < 0)
     {
         chunk_x = 0;
+        tile_x = 0;
     }
     else if (chunk_x >= NUMBER_OF_CHUNKS_IN_WORLD_X)
     {
@@ -119,6 +128,7 @@ internal corrected_tile_indices_t get_corrected_tile_indices(i32 tile_x,
     if (chunk_y < 0)
     {
         chunk_y = 0;
+        tile_y = 0;
     }
     else if (chunk_y >= NUMBER_OF_CHUNKS_IN_WORLD_Y)
     {
@@ -179,6 +189,11 @@ internal world_position_t get_world_position(game_world_t *world, f32 x, f32 y,
         x - corrected_tile_indices.tile_x * world->tile_width;
     result.tile_relative_y =
         y - corrected_tile_indices.tile_y * world->tile_height;
+
+    result.tile_relative_x =
+        result.tile_relative_x < 0 ? 0 : result.tile_relative_x;
+    result.tile_relative_y =
+        result.tile_relative_y < 0 ? 0 : result.tile_relative_y;
 
     // Check if there is a tilemap where the player wants to head to.
     result.tile_index_x =
@@ -360,7 +375,7 @@ __declspec(dllexport) void game_render(
 
     // Update player position based on input.
     // Movement speed is in meters / second.
-    f32 player_movement_speed = game_state->pixels_to_meters * 0.25f;
+    f32 player_movement_speed = game_state->pixels_to_meters * 0.15f;
     f32 player_new_x_position = 0.0f;
     f32 player_new_y_position = 0.0f;
 
@@ -425,26 +440,22 @@ __declspec(dllexport) void game_render(
                 GET_TILE_INDEX(position.tile_index_x) * game_world->tile_width +
                 position.tile_relative_x;
 
-            if (game_state->player_x >
-                GET_TILE_CHUNK_INDEX(position.tile_index_x) *
-                    game_state->game_world->tile_width)
+            if (game_state->player_x > NUMBER_OF_TILES_PER_CHUNK_X *
+                                           game_state->game_world->tile_width)
             {
-                game_state->player_x -=
-                    GET_TILE_CHUNK_INDEX(position.tile_index_x) *
-                    game_state->game_world->tile_width;
+                game_state->player_x -= NUMBER_OF_TILES_PER_CHUNK_X *
+                                        game_state->game_world->tile_width;
             }
 
             game_state->player_y = GET_TILE_INDEX(position.tile_index_y) *
                                        game_world->tile_height +
                                    position.tile_relative_y;
 
-            if (game_state->player_y >
-                GET_TILE_CHUNK_INDEX(position.tile_index_y) *
-                    game_state->game_world->tile_height)
+            if (game_state->player_y > NUMBER_OF_TILES_PER_CHUNK_X *
+                                           game_state->game_world->tile_height)
             {
-                game_state->player_y -=
-                    GET_TILE_CHUNK_INDEX(position.tile_index_y) *
-                    game_state->game_world->tile_height;
+                game_state->player_y -= NUMBER_OF_TILES_PER_CHUNK_X *
+                                        game_state->game_world->tile_height;
             }
         }
     }
@@ -490,8 +501,8 @@ __declspec(dllexport) void game_render(
             i32 x = _x + GET_TILE_INDEX(player_position.tile_index_x);
             i32 y = _y + GET_TILE_INDEX(player_position.tile_index_y);
 
-            x = x < 0 ? 0 : x;
-            y = y < 0 ? 0 : y;
+            // x = x < 0 ? 0 : x;
+            // y = y < 0 ? 0 : y;
 
             // When x and y are zero, that tile
             // should be rendered at the center

@@ -73,7 +73,7 @@ typedef struct
 #define NUMBER_OF_TILES_PER_CHUNK_Y 9
 
 #define NUMBER_OF_CHUNKS_IN_WORLD_X 4
-#define NUMBER_OF_CHUNKS_IN_WORLD_Y 1
+#define NUMBER_OF_CHUNKS_IN_WORLD_Y 3
 
 // NOTE: Game state will be stored *in* the permanent section of game memory.
 typedef struct
