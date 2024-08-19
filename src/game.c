@@ -9,6 +9,8 @@ void draw_rectangle(game_framebuffer_t *game_framebuffer, f32 top_left_x,
                     f32 top_left_y, f32 width, f32 height, f32 normalized_red,
                     f32 normalized_green, f32 normalized_blue)
 {
+    ASSERT(game_framebuffer);
+
     ASSERT(width >= 0.0f);
     ASSERT(height >= 0.0f);
 
@@ -150,6 +152,9 @@ internal u32 get_value_in_tile_chunk(game_tile_chunk_t *restrict tile_chunk,
 {
     ASSERT(tile_chunk);
 
+    ASSERT(x < NUMBER_OF_TILES_PER_CHUNK_X);
+    ASSERT(y < NUMBER_OF_TILES_PER_CHUNK_Y);
+
     return tile_chunk->tile_chunk[x + y * NUMBER_OF_TILES_PER_CHUNK_X];
 }
 
@@ -158,9 +163,14 @@ internal u32 get_value_of_tile_in_world(game_world_t *restrict world,
 {
     ASSERT(world);
 
+    ASSERT(tile_indices.chunk_x < NUMBER_OF_CHUNKS_IN_WORLD_X);
+    ASSERT(tile_indices.chunk_y < NUMBER_OF_CHUNKS_IN_WORLD_Y);
+
     game_tile_chunk_t *tile_chunk =
         &world->tile_chunks[tile_indices.chunk_x +
                             tile_indices.chunk_y * NUMBER_OF_CHUNKS_IN_WORLD_X];
+
+    ASSERT(tile_chunk);
 
     return get_value_in_tile_chunk(tile_chunk, tile_indices.tile_x,
                                    tile_indices.tile_y);
@@ -173,6 +183,8 @@ internal world_position_t get_world_position(game_world_t *world, f32 x, f32 y,
                                              i32 tile_indices_x,
                                              i32 tile_indices_y)
 {
+    ASSERT(world);
+
     world_position_t result = {0};
     result.tile_index_x = 0;
     result.tile_index_y = 0;
@@ -185,17 +197,20 @@ internal world_position_t get_world_position(game_world_t *world, f32 x, f32 y,
                                    GET_TILE_CHUNK_INDEX(tile_indices_x),
                                    GET_TILE_CHUNK_INDEX(tile_indices_y));
 
-    result.tile_relative_x =
+    f32 current_tile_relative_x =
         x - corrected_tile_indices.tile_x * world->tile_width;
-    result.tile_relative_y =
+    f32 current_tile_relative_y =
         y - corrected_tile_indices.tile_y * world->tile_height;
 
-    result.tile_relative_x =
-        result.tile_relative_x < 0 ? 0 : result.tile_relative_x;
-    result.tile_relative_y =
-        result.tile_relative_y < 0 ? 0 : result.tile_relative_y;
+    ASSERT(current_tile_relative_x >= 0.0f);
+    ASSERT(current_tile_relative_y >= 0.0f);
 
-    // Check if there is a tilemap where the player wants to head to.
+    ASSERT(current_tile_relative_x <= world->tile_width);
+    ASSERT(current_tile_relative_y <= world->tile_height);
+
+    result.tile_relative_x = current_tile_relative_x;
+    result.tile_relative_y = current_tile_relative_y;
+
     result.tile_index_x =
         SET_TILE_INDEX(result.tile_index_x, corrected_tile_indices.tile_x);
 
@@ -212,10 +227,13 @@ internal world_position_t get_world_position(game_world_t *world, f32 x, f32 y,
 }
 
 // Returns 1 if collision has occured, and 0 if it did not.
+// NOTE: x and y is the tile chunk relative coords.
 internal b32 check_point_and_tile_chunk_collision(
     game_world_t *const world, const f32 x, const f32 y,
     const i32 current_tile_chunk_x, const i32 current_tile_chunk_y)
 {
+    ASSERT(world);
+
     world_position_t position = get_world_position(
         world, x, y, current_tile_chunk_x, current_tile_chunk_y);
 
@@ -240,6 +258,7 @@ __declspec(dllexport) void game_render(
     ASSERT(game_input != NULL);
     ASSERT(game_framebuffer->backbuffer_memory != NULL);
     ASSERT(game_memory_allocator->permanent_memory != NULL);
+    ASSERT(platform_services != NULL);
 
     ASSERT(sizeof(game_state_t) < game_memory_allocator->permanent_memory_size)
 
@@ -258,18 +277,6 @@ __declspec(dllexport) void game_render(
                        sizeof(game_state_t),
                    game_memory_allocator->permanent_memory_size -
                        sizeof(game_state_t));
-
-        ASSERT(platform_services != NULL);
-
-        platform_file_read_result_t file_read_result =
-            platform_services->platform_read_entire_file(__FILE__);
-
-        platform_services->platform_write_to_file(
-            "temp.txt", file_read_result.file_content_buffer,
-            file_read_result.file_content_size);
-
-        platform_services->platform_close_file(
-            file_read_result.file_content_buffer);
 
         game_world_t *game_world = (game_world_t *)arena_alloc_default_aligned(
             &game_state->memory_arena, sizeof(game_world_t));
@@ -290,7 +297,7 @@ __declspec(dllexport) void game_render(
             for (i32 chunk_x = 0; chunk_x < NUMBER_OF_CHUNKS_IN_WORLD_X;
                  chunk_x++)
             {
-                u32 tile_value = (chunk_x + 1) % 3;
+                u32 tile_value = (chunk_x + 1);
 
                 game_tile_chunk_t *basic_tile_chunk =
                     &game_state->game_world
@@ -353,20 +360,19 @@ __declspec(dllexport) void game_render(
                 basic_tile_chunk->tile_chunk[(NUMBER_OF_TILES_PER_CHUNK_X / 2) +
                                              (NUMBER_OF_TILES_PER_CHUNK_Y / 2) *
                                                  NUMBER_OF_TILES_PER_CHUNK_X] =
-                    1;
+                    tile_value;
             }
         }
 
-        game_state->player_x = 150.0f;
-        game_state->player_y = 150.0f;
-
-        world_position_t position =
-            get_world_position(game_state->game_world, game_state->player_x,
-                               game_state->player_y, 0, 0);
+        world_position_t position = get_world_position(
+            game_state->game_world, game_world->tile_width * 4,
+            game_world->tile_height * 4, 0, 0);
 
         game_state->current_tile_indices_x = position.tile_index_x;
-
         game_state->current_tile_indices_y = position.tile_index_y;
+
+        game_state->player_tile_relative_x = position.tile_relative_x;
+        game_state->player_tile_relative_y = position.tile_relative_y;
 
         game_state->is_initialized = 1;
     }
@@ -375,7 +381,8 @@ __declspec(dllexport) void game_render(
 
     // Update player position based on input.
     // Movement speed is in meters / second.
-    f32 player_movement_speed = game_state->pixels_to_meters * 0.15f;
+    f32 player_movement_speed = game_state->pixels_to_meters * 0.25f;
+
     f32 player_new_x_position = 0.0f;
     f32 player_new_y_position = 0.0f;
 
@@ -389,10 +396,15 @@ __declspec(dllexport) void game_render(
     player_new_y_position +=
         (game_input->keyboard_state.key_s.is_key_down ? 1 : 0);
 
-    player_new_x_position =
-        player_new_x_position * player_movement_speed + game_state->player_x;
-    player_new_y_position =
-        player_new_y_position * player_movement_speed + game_state->player_y;
+    player_new_x_position = player_new_x_position * player_movement_speed +
+                            game_state->player_tile_relative_x +
+                            GET_TILE_INDEX(game_state->current_tile_indices_x) *
+                                game_world->tile_width;
+
+    player_new_y_position = player_new_y_position * player_movement_speed +
+                            game_state->player_tile_relative_y +
+                            GET_TILE_INDEX(game_state->current_tile_indices_y) *
+                                game_world->tile_height;
 
     // The player position will be at the middle bottom of the player
     // sprite (players feet in technical terms?) The player center is
@@ -431,32 +443,10 @@ __declspec(dllexport) void game_render(
                 game_state->current_tile_indices_y);
 
             game_state->current_tile_indices_y = position.tile_index_y;
-
-            u32 old_value = game_state->current_tile_indices_x;
             game_state->current_tile_indices_x = position.tile_index_x;
 
-            // NOTE: player x and y are tile relative!!
-            game_state->player_x =
-                GET_TILE_INDEX(position.tile_index_x) * game_world->tile_width +
-                position.tile_relative_x;
-
-            if (game_state->player_x > NUMBER_OF_TILES_PER_CHUNK_X *
-                                           game_state->game_world->tile_width)
-            {
-                game_state->player_x -= NUMBER_OF_TILES_PER_CHUNK_X *
-                                        game_state->game_world->tile_width;
-            }
-
-            game_state->player_y = GET_TILE_INDEX(position.tile_index_y) *
-                                       game_world->tile_height +
-                                   position.tile_relative_y;
-
-            if (game_state->player_y > NUMBER_OF_TILES_PER_CHUNK_X *
-                                           game_state->game_world->tile_height)
-            {
-                game_state->player_y -= NUMBER_OF_TILES_PER_CHUNK_X *
-                                        game_state->game_world->tile_height;
-            }
+            game_state->player_tile_relative_x = position.tile_relative_x;
+            game_state->player_tile_relative_y = position.tile_relative_y;
         }
     }
 
@@ -464,35 +454,44 @@ __declspec(dllexport) void game_render(
     draw_rectangle(game_framebuffer, 0.0f, 0.0f, (f32)game_framebuffer->width,
                    (f32)game_framebuffer->height, 1.0f, 1.0f, 1.0f);
 
+    f32 player_tile_chunk_relative_x =
+        game_state->player_tile_relative_x +
+        GET_TILE_INDEX(game_state->current_tile_indices_x) *
+            game_world->tile_width;
+
+    f32 player_tile_chunk_relative_y =
+        game_state->player_tile_relative_y +
+        GET_TILE_INDEX(game_state->current_tile_indices_y) *
+            game_world->tile_height;
+
     // Draw the tile map.
     // This draws all the tiles (or atleast as much as possible).
     // What I want is for the player to be at the center, so x and y is
     // the tile indices that are around the player.
     world_position_t player_position = get_world_position(
-        game_world, game_state->player_x, game_state->player_y,
-        game_state->current_tile_indices_x, game_state->current_tile_indices_y);
+        game_state->game_world, player_tile_chunk_relative_x,
+        player_tile_chunk_relative_y, game_state->current_tile_indices_x,
+        game_state->current_tile_indices_y);
 
     // At any moment of time, the number of tiles that can be viewed on
-    // the screen is FIXED. Because of the offset applied, it makes
-    // sense to have a few extra tiles to view (which may very well be
-    // culled) in each direction.
+    // the screen is FIXED.
     const i32 tiles_viewed_x =
-        truncate_f32_to_i32(game_framebuffer->width / game_world->tile_width) +
-        2;
+        truncate_f32_to_i32(game_state->pixels_to_meters *
+                            game_framebuffer->width / game_world->tile_width);
 
-    const i32 tiles_viewed_y = truncate_f32_to_i32(game_framebuffer->height /
-                                                   game_world->tile_height) +
-                               4;
+    const i32 tiles_viewed_y =
+        truncate_f32_to_i32(game_state->pixels_to_meters *
+                            game_framebuffer->height / game_world->tile_height);
 
-    // Rendering offsets. The value are computed such that the player is
+    // Rendering offsets. The value are computed such that the current chunk is
     // at the center of the screen.
     f32 tile_map_rendering_upper_left_offset_x =
-        game_framebuffer->width / 2.0f - player_sprite_width / 2 -
-        player_new_x_position;
+        game_framebuffer->width / 2.0f -
+        (NUMBER_OF_TILES_PER_CHUNK_X / 2.0f) * game_world->tile_width;
 
     f32 tile_map_rendering_upper_left_offset_y =
-        game_framebuffer->height / 2.0f - player_sprite_height / 2 -
-        player_new_y_position;
+        game_framebuffer->height / 2.0f -
+        (NUMBER_OF_TILES_PER_CHUNK_Y / 2.0f) * game_world->tile_height;
 
     for (i32 _y = -tiles_viewed_y / 2; _y <= tiles_viewed_y / 2; ++_y)
     {
@@ -501,12 +500,6 @@ __declspec(dllexport) void game_render(
             i32 x = _x + GET_TILE_INDEX(player_position.tile_index_x);
             i32 y = _y + GET_TILE_INDEX(player_position.tile_index_y);
 
-            // x = x < 0 ? 0 : x;
-            // y = y < 0 ? 0 : y;
-
-            // When x and y are zero, that tile
-            // should be rendered at the center
-            // of the screen.
             f32 top_left_x = tile_map_rendering_upper_left_offset_x +
                              game_world->tile_width * (x);
 
@@ -532,6 +525,18 @@ __declspec(dllexport) void game_render(
                                (f32)top_left_y, (f32)game_world->tile_width,
                                (f32)game_world->tile_height, 0.4f, 0.8f, 0.4f);
             }
+            else if (tile_value == 3)
+            {
+                draw_rectangle(game_framebuffer, (f32)top_left_x,
+                               (f32)top_left_y, (f32)game_world->tile_width,
+                               (f32)game_world->tile_height, 0.0f, 0.8f, 0.3f);
+            }
+            else if (tile_value == 9)
+            {
+                draw_rectangle(game_framebuffer, (f32)top_left_x,
+                               (f32)top_left_y, (f32)game_world->tile_width,
+                               (f32)game_world->tile_height, 1.0f, 0.8f, 0.4f);
+            }
             else
             {
                 draw_rectangle(game_framebuffer, (f32)top_left_x,
@@ -542,8 +547,9 @@ __declspec(dllexport) void game_render(
     }
 
     const f32 player_top_left_x =
-        game_state->player_x - 0.5f * player_sprite_width;
-    const f32 player_top_left_y = game_state->player_y - player_sprite_height;
+        player_tile_chunk_relative_x - 0.5f * player_sprite_width;
+    const f32 player_top_left_y =
+        player_tile_chunk_relative_y - player_sprite_height;
 
     draw_rectangle(
         game_framebuffer,

@@ -69,11 +69,11 @@ typedef struct
     u32 *tile_chunk;
 } game_tile_chunk_t;
 
-#define NUMBER_OF_TILES_PER_CHUNK_X 9
-#define NUMBER_OF_TILES_PER_CHUNK_Y 9
+#define NUMBER_OF_TILES_PER_CHUNK_X 25
+#define NUMBER_OF_TILES_PER_CHUNK_Y 19
 
 #define NUMBER_OF_CHUNKS_IN_WORLD_X 4
-#define NUMBER_OF_CHUNKS_IN_WORLD_Y 3
+#define NUMBER_OF_CHUNKS_IN_WORLD_Y 4
 
 // NOTE: Game state will be stored *in* the permanent section of game memory.
 typedef struct
@@ -88,8 +88,8 @@ typedef struct
 typedef struct
 {
     // Relative to tile chunk.
-    f32 player_x;
-    f32 player_y;
+    f32 player_tile_relative_x;
+    f32 player_tile_relative_y;
 
     // The current tile chunk and tile index the player is in.
     u32 current_tile_indices_x;
