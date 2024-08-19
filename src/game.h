@@ -87,13 +87,7 @@ typedef struct
 
 typedef struct
 {
-    // Relative to tile chunk.
-    f32 player_tile_relative_x;
-    f32 player_tile_relative_y;
-
-    // The current tile chunk and tile index the player is in.
-    u32 current_tile_indices_x;
-    u32 current_tile_indices_y;
+    world_position_t player_world_position;
 
     f32 pixels_to_meters;
 
