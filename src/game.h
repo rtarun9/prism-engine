@@ -72,8 +72,8 @@ typedef struct
 #define NUMBER_OF_TILES_PER_CHUNK_X 25
 #define NUMBER_OF_TILES_PER_CHUNK_Y 19
 
-#define NUMBER_OF_CHUNKS_IN_WORLD_X 4
-#define NUMBER_OF_CHUNKS_IN_WORLD_Y 4
+#define NUMBER_OF_CHUNKS_IN_WORLD_X 64
+#define NUMBER_OF_CHUNKS_IN_WORLD_Y 64
 
 // NOTE: Game state will be stored *in* the permanent section of game memory.
 typedef struct
@@ -93,6 +93,15 @@ typedef struct
 
     game_world_t *game_world;
     arena_allocator_t memory_arena;
+
+    // NOTE: For bitmap loading and testing purposes only.
+    u32 bitmap_mask_r;
+    u32 bitmap_mask_g;
+    u32 bitmap_mask_b;
+    u32 bitmap_mask_a;
+    u32 bitmap_height;
+    u32 bitmap_width;
+    u32 *bitmap_pointer;
 
     u32 is_initialized;
 } game_state_t;

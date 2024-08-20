@@ -146,6 +146,9 @@ internal corrected_tile_indices_t get_corrected_tile_indices(i32 tile_x,
     return result;
 }
 
+// NOTE: Move this else where?
+#define CHUNK_NOT_LOADED 90
+
 // NOTE: Assumes that the tile x / y and chunk x / y values are corrected.
 internal u32 get_value_in_tile_chunk(game_tile_chunk_t *restrict tile_chunk,
                                      u32 x, u32 y)
@@ -155,9 +158,15 @@ internal u32 get_value_in_tile_chunk(game_tile_chunk_t *restrict tile_chunk,
     ASSERT(x < NUMBER_OF_TILES_PER_CHUNK_X);
     ASSERT(y < NUMBER_OF_TILES_PER_CHUNK_Y);
 
+    if (tile_chunk->tile_chunk == NULL)
+    {
+        return CHUNK_NOT_LOADED;
+    }
+
     return tile_chunk->tile_chunk[x + y * NUMBER_OF_TILES_PER_CHUNK_X];
 }
 
+// Returns CHUNK_NOT_LOADED if the chunk isn't loaded :)
 internal u32 get_value_of_tile_in_world(game_world_t *restrict world,
                                         corrected_tile_indices_t tile_indices)
 {
@@ -241,6 +250,35 @@ internal b32 check_point_and_tile_chunk_collision(
     return get_value_of_tile_in_world(world, tile_indices);
 }
 
+// Ref for understanding the BMP file format :
+// https://gibberlings3.github.io/iesdp/file_formats/ie_formats/bmp_v5.htm
+// Use pragma pack so that the padding of struct and all elements is 1 byte.
+// NOTE: Assume that bmp v5 is being read.
+#pragma pack(push, 1)
+typedef struct
+{
+    u16 file_type;
+    u32 file_size;
+    u32 reserved;
+    u32 bitmap_offset;
+    u32 header_size;
+    u32 width;
+    u32 height;
+    u16 planes;
+    u16 bits_per_pixel;
+    u32 compression;
+    u32 image_size;
+    u32 x_pixels_per_m;
+    u32 y_pixels_per_m;
+    u32 colors_used;
+    u32 colors_important;
+    u32 color_mask_r;
+    u32 color_mask_g;
+    u32 color_mask_b;
+    u32 color_mask_a;
+} bmp_header_t;
+#pragma pack(pop)
+
 __declspec(dllexport) void game_render(
     game_memory_allocator_t *restrict game_memory_allocator,
     game_framebuffer_t *restrict game_framebuffer,
@@ -259,6 +297,26 @@ __declspec(dllexport) void game_render(
 
     if (!game_state->is_initialized)
     {
+        // Load a BMP file for testing.
+        platform_file_read_result_t bmp_read_result =
+            platform_services->platform_read_entire_file(
+                "../assets/kenny_colored_tilemap.bmp");
+
+        u64 file_size = bmp_read_result.file_content_size;
+        bmp_header_t *bmp_header =
+            (bmp_header_t *)(bmp_read_result.file_content_buffer);
+
+        game_state->bitmap_mask_r = bmp_header->color_mask_r;
+        game_state->bitmap_mask_g = bmp_header->color_mask_g;
+        game_state->bitmap_mask_b = bmp_header->color_mask_b;
+        game_state->bitmap_mask_a = bmp_header->color_mask_a;
+        game_state->bitmap_height = bmp_header->height;
+        game_state->bitmap_width = bmp_header->width;
+
+        game_state->bitmap_pointer =
+            (u32 *)((u8 *)bmp_read_result.file_content_buffer +
+                    bmp_header->bitmap_offset);
+
         // For now, it is assumed that a single meter equals 1/xth of the
         // framebuffer width.
         game_state->pixels_to_meters = game_framebuffer->width / 40.0f;
@@ -276,6 +334,8 @@ __declspec(dllexport) void game_render(
         game_world->tile_width = game_state->pixels_to_meters;
         game_world->tile_height = game_world->tile_width;
 
+        // The tile chunks for the world is pre-allocated. HOWEVER, tile chunks
+        // are sparsely loaded.
         game_world->tile_chunks = (game_tile_chunk_t *)arena_alloc_array(
             &game_state->memory_arena,
             NUMBER_OF_CHUNKS_IN_WORLD_X * NUMBER_OF_CHUNKS_IN_WORLD_Y,
@@ -289,70 +349,76 @@ __declspec(dllexport) void game_render(
             for (i32 chunk_x = 0; chunk_x < NUMBER_OF_CHUNKS_IN_WORLD_X;
                  chunk_x++)
             {
-                u32 tile_value = (chunk_x + 1);
-
-                game_tile_chunk_t *basic_tile_chunk =
-                    &game_state->game_world
-                         ->tile_chunks[chunk_x +
-                                       chunk_y * NUMBER_OF_CHUNKS_IN_WORLD_X];
-
-                basic_tile_chunk->tile_chunk = (u32 *)arena_alloc_array(
-                    &game_state->memory_arena,
-                    NUMBER_OF_TILES_PER_CHUNK_X * NUMBER_OF_TILES_PER_CHUNK_Y,
-                    sizeof(u32), sizeof(u32));
-
-                // Set the left and right border as obstacles.
-                for (i32 tile_y = 0; tile_y < NUMBER_OF_TILES_PER_CHUNK_Y;
-                     tile_y++)
+                if (chunk_x == 0 || (chunk_x == 1 && chunk_y == 3))
                 {
+                    u32 tile_value = (chunk_x + 1);
 
-                    basic_tile_chunk
-                        ->tile_chunk[0 + tile_y * NUMBER_OF_TILES_PER_CHUNK_X] =
-                        tile_value;
+                    game_tile_chunk_t *basic_tile_chunk =
+                        &game_state->game_world->tile_chunks
+                             [chunk_x + chunk_y * NUMBER_OF_CHUNKS_IN_WORLD_X];
+
+                    basic_tile_chunk->tile_chunk = (u32 *)arena_alloc_array(
+                        &game_state->memory_arena,
+                        NUMBER_OF_TILES_PER_CHUNK_X *
+                            NUMBER_OF_TILES_PER_CHUNK_Y,
+                        sizeof(u32), sizeof(u32));
+
+                    // Set the left and right border as obstacles.
+                    for (i32 tile_y = 0; tile_y < NUMBER_OF_TILES_PER_CHUNK_Y;
+                         tile_y++)
+                    {
+
+                        basic_tile_chunk
+                            ->tile_chunk[0 +
+                                         tile_y * NUMBER_OF_TILES_PER_CHUNK_X] =
+                            tile_value;
+
+                        basic_tile_chunk
+                            ->tile_chunk[(NUMBER_OF_TILES_PER_CHUNK_X - 1) +
+                                         tile_y * NUMBER_OF_TILES_PER_CHUNK_X] =
+                            tile_value;
+                    }
 
                     basic_tile_chunk
                         ->tile_chunk[(NUMBER_OF_TILES_PER_CHUNK_X - 1) +
-                                     tile_y * NUMBER_OF_TILES_PER_CHUNK_X] =
-                        tile_value;
-                }
-
-                basic_tile_chunk->tile_chunk[(NUMBER_OF_TILES_PER_CHUNK_X - 1) +
-                                             (NUMBER_OF_TILES_PER_CHUNK_Y / 2) *
-                                                 NUMBER_OF_TILES_PER_CHUNK_X] =
-                    0;
-
-                basic_tile_chunk
-                    ->tile_chunk[(0) + (NUMBER_OF_TILES_PER_CHUNK_Y / 2) *
-                                           NUMBER_OF_TILES_PER_CHUNK_X] = 0;
-
-                // Set the top and bottom border as obstacles.
-                for (i32 tile_x = 0; tile_x < NUMBER_OF_TILES_PER_CHUNK_X;
-                     tile_x++)
-                {
-                    basic_tile_chunk
-                        ->tile_chunk[tile_x + 0 * NUMBER_OF_TILES_PER_CHUNK_X] =
-                        tile_value;
+                                     (NUMBER_OF_TILES_PER_CHUNK_Y / 2) *
+                                         NUMBER_OF_TILES_PER_CHUNK_X] = 0;
 
                     basic_tile_chunk
-                        ->tile_chunk[tile_x +
+                        ->tile_chunk[(0) + (NUMBER_OF_TILES_PER_CHUNK_Y / 2) *
+                                               NUMBER_OF_TILES_PER_CHUNK_X] = 0;
+
+                    // Set the top and bottom border as obstacles.
+                    for (i32 tile_x = 0; tile_x < NUMBER_OF_TILES_PER_CHUNK_X;
+                         tile_x++)
+                    {
+                        basic_tile_chunk
+                            ->tile_chunk[tile_x +
+                                         0 * NUMBER_OF_TILES_PER_CHUNK_X] =
+                            tile_value;
+
+                        basic_tile_chunk
+                            ->tile_chunk[tile_x +
+                                         (NUMBER_OF_TILES_PER_CHUNK_Y - 1) *
+                                             NUMBER_OF_TILES_PER_CHUNK_X] =
+                            tile_value;
+                    }
+
+                    basic_tile_chunk
+                        ->tile_chunk[(NUMBER_OF_TILES_PER_CHUNK_X / 2) +
+                                     (0) * NUMBER_OF_TILES_PER_CHUNK_X] = 0;
+
+                    basic_tile_chunk
+                        ->tile_chunk[(NUMBER_OF_TILES_PER_CHUNK_X / 2) +
                                      (NUMBER_OF_TILES_PER_CHUNK_Y - 1) *
+                                         NUMBER_OF_TILES_PER_CHUNK_X] = 0;
+
+                    basic_tile_chunk
+                        ->tile_chunk[(NUMBER_OF_TILES_PER_CHUNK_X / 2) +
+                                     (NUMBER_OF_TILES_PER_CHUNK_Y / 2) *
                                          NUMBER_OF_TILES_PER_CHUNK_X] =
                         tile_value;
                 }
-
-                basic_tile_chunk
-                    ->tile_chunk[(NUMBER_OF_TILES_PER_CHUNK_X / 2) +
-                                 (0) * NUMBER_OF_TILES_PER_CHUNK_X] = 0;
-
-                basic_tile_chunk->tile_chunk[(NUMBER_OF_TILES_PER_CHUNK_X / 2) +
-                                             (NUMBER_OF_TILES_PER_CHUNK_Y - 1) *
-                                                 NUMBER_OF_TILES_PER_CHUNK_X] =
-                    0;
-
-                basic_tile_chunk->tile_chunk[(NUMBER_OF_TILES_PER_CHUNK_X / 2) +
-                                             (NUMBER_OF_TILES_PER_CHUNK_Y / 2) *
-                                                 NUMBER_OF_TILES_PER_CHUNK_X] =
-                    tile_value;
             }
         }
 
@@ -370,7 +436,7 @@ __declspec(dllexport) void game_render(
     // Update player position based on input.
     // Movement speed is in meters / second.
     f32 player_movement_speed =
-        game_state->pixels_to_meters * 30.0f * game_input->dt_for_frame;
+        game_state->pixels_to_meters * 6.0f * game_input->dt_for_frame;
 
     world_position_t prev_player_position = game_state->player_world_position;
 
@@ -405,6 +471,8 @@ __declspec(dllexport) void game_render(
         prev_player_position.tile_index_y);
 
     {
+        // NOTE: Assumes that if a chunk is not loaded in a certain place, it is
+        // out of bounds.
         if (!(check_point_and_tile_chunk_collision(
                   game_world, player_new_tile_relative_x_position,
                   player_new_tile_relative_y_position,
@@ -511,7 +579,7 @@ __declspec(dllexport) void game_render(
                                (f32)top_left_y, (f32)game_world->tile_width,
                                (f32)game_world->tile_height, 1.0f, 0.8f, 0.4f);
             }
-            else
+            else if (tile_value != CHUNK_NOT_LOADED)
             {
                 draw_rectangle(game_framebuffer, (f32)top_left_x,
                                (f32)top_left_y, (f32)game_world->tile_width,
@@ -535,4 +603,24 @@ __declspec(dllexport) void game_render(
         (f32)tile_map_rendering_upper_left_offset_x + player_top_left_x,
         (f32)tile_map_rendering_upper_left_offset_y + player_top_left_y,
         (f32)player_sprite_width, (f32)player_sprite_height, 0.2f, 0.7f, 1.0f);
+
+    // NOTE: Test : Rendering the bitmap.
+    u32 *source = game_state->bitmap_pointer;
+
+    for (u32 y = 0; y < game_state->bitmap_height; y++)
+    {
+
+        u32 *destination =
+            (u32 *)(((u32 *)game_framebuffer->backbuffer_memory) +
+                    game_framebuffer->width * y);
+        for (u32 x = 0; x < game_state->bitmap_width; x++)
+        {
+            u32 pixel_color = *source++;
+            u32 red = pixel_color & game_state->bitmap_mask_r;
+            u32 green = pixel_color & game_state->bitmap_mask_g;
+            u32 blue = pixel_color & game_state->bitmap_mask_g;
+
+            *(destination)++ = pixel_color;
+        }
+    }
 }

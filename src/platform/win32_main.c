@@ -442,7 +442,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
 
     ShowWindow(window_handle, SW_SHOW);
 
-    win32_resize_bitmap(1920 / 2, 1080 / 2);
+    win32_resize_bitmap(1920 / 4, 1080 / 4);
 
     // RDTSC stands for read timestamp counter. Each processes will have a
     // time stamp counter, which basically increments after each clock
