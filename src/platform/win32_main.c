@@ -1,18 +1,7 @@
 #include "win32_main.h"
-
-#include <errhandlingapi.h>
-#include <fileapi.h>
-#include <libloaderapi.h>
-#include <memoryapi.h>
-#include <minwinbase.h>
-#include <processthreadsapi.h>
-#include <securitybaseapi.h>
 #include <stdio.h>
 #include <timeapi.h>
-#include <winbase.h>
-#include <winerror.h>
 #include <winnt.h>
-#include <winuser.h>
 
 // NOTE: Explanation of the rendering logic:
 // The engine allocates memory for its own bitmap and renders into it. GDI's
@@ -20,7 +9,7 @@
 // bitmap into the actual device context.
 // The bitmap will be of fixed size and will not depend on window resolution.
 
-global_variable win32_offscreen_framebuffer_t g_offscreen_framebuffer;
+global_variable win32_framebuffer_t g_offscreen_framebuffer;
 
 internal win32_dimensions_t
 win32_get_client_region_dimensions(const HWND window_handle)
@@ -463,6 +452,14 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
         NULL, memory_allocator.permanent_memory_size,
         MEM_COMMIT | MEM_RESERVE | MEM_LARGE_PAGES, PAGE_READWRITE);
     DWORD error = GetLastError();
+    if (error == 1450)
+    {
+        MessageBoxA(NULL,
+                    "Game cannot start as system is out of resources "
+                    "[memory_allocator could not allocate 1MB]",
+                    "ERROR", MB_OK);
+    }
+
     ASSERT(memory_allocator.permanent_memory != NULL);
 
     // Some explanation for the input module :

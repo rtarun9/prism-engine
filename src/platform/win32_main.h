@@ -14,7 +14,7 @@ typedef struct
 {
     BITMAPINFOHEADER bitmap_info_header;
     u8 *backbuffer_memory;
-} win32_offscreen_framebuffer_t;
+} win32_framebuffer_t;
 
 typedef struct
 {
@@ -27,7 +27,7 @@ typedef struct
     u8 key_states[256];
 } win32_keyboard_state_t;
 
-// To minimize memory allocators, memory is allocated upfront and used.
+// To minimize memory allocators, memory is allocated upfront.
 typedef struct
 {
     u64 permanent_memory_size;

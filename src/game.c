@@ -34,12 +34,12 @@ void draw_rectangle(game_framebuffer_t *game_framebuffer, f32 top_left_x,
         min_y = 0;
     }
 
-    if (max_x > game_framebuffer->width)
+    if (max_x > (i32)game_framebuffer->width)
     {
         max_x = game_framebuffer->width;
     }
 
-    if (max_y > game_framebuffer->height)
+    if (max_y > (i32)game_framebuffer->height)
     {
         max_y = game_framebuffer->height;
     }
@@ -64,6 +64,57 @@ void draw_rectangle(game_framebuffer_t *game_framebuffer, f32 top_left_x,
             *pixel++ = pixel_color;
         }
         row += pitch;
+    }
+}
+
+void draw_texture(game_texture_t *texture, game_framebuffer_t *framebuffer,
+                  f32 top_left_x, f32 top_left_y)
+{
+    i32 min_x = round_f32_to_i32(top_left_x);
+    i32 min_y = round_f32_to_i32(top_left_y);
+
+    if (min_x < 0)
+    {
+        min_x = 0;
+    }
+
+    if (min_y < 0)
+    {
+        min_y = 0;
+    }
+
+    u32 *source = texture->pointer + (texture->width * (texture->height - 1));
+
+    u32 blit_width = texture->width > framebuffer->width ? framebuffer->width
+                                                         : texture->width;
+    u32 blit_height = texture->height > framebuffer->height
+                          ? framebuffer->height
+                          : texture->height;
+
+    for (u32 y = 0; y < blit_height; y++)
+    {
+        u32 *destination = ((u32 *)framebuffer->backbuffer_memory + (u32)min_x +
+                            framebuffer->width * (y + (u32)min_y));
+
+        u32 *source_pixel = source;
+        for (u32 x = 0; x < blit_width; x++)
+        {
+            u32 pixel_color = *source_pixel++;
+
+            u8 alpha = (u8)((pixel_color & texture->mask_a) >> 24);
+            u8 red = (u8)((pixel_color & texture->mask_r) >> 16);
+            u8 green = (u8)((pixel_color & texture->mask_g) >> 8);
+            u8 blue = (u8)(pixel_color & texture->mask_b);
+
+            // NOTE: Proper alpha blending?
+            if (alpha != 0)
+            {
+                *(destination)++ =
+                    blue | (green << 8) | (red << 16) | (alpha << 24);
+            }
+        }
+        // This is done because the texture is vertically flipped.
+        source -= texture->width;
     }
 }
 
@@ -185,13 +236,13 @@ internal u32 get_value_of_tile_in_world(game_world_t *restrict world,
                                    tile_indices.tile_y);
 }
 
-internal world_position_t get_world_position(game_world_t *world,
-                                             f32 tile_relative_x,
-                                             f32 tile_relative_y,
-                                             i32 tile_indices_x,
-                                             i32 tile_indices_y)
+internal game_world_position_t get_world_position(game_world_t *world,
+                                                  f32 tile_relative_x,
+                                                  f32 tile_relative_y,
+                                                  i32 tile_indices_x,
+                                                  i32 tile_indices_y)
 {
-    world_position_t result = {0};
+    game_world_position_t result = {0};
     result.tile_index_x = 0;
     result.tile_index_y = 0;
 
@@ -234,7 +285,7 @@ internal b32 check_point_and_tile_chunk_collision(
 {
     ASSERT(world);
 
-    world_position_t position =
+    game_world_position_t position =
         get_world_position(world, tile_relative_x, tile_relative_y,
                            current_tile_chunk_x, current_tile_chunk_y);
 
@@ -277,6 +328,34 @@ typedef struct
     u32 color_mask_b;
     u32 color_mask_a;
 } bmp_header_t;
+
+game_texture_t load_texture(platform_services_t *platform_services,
+                            const char *file_path)
+{
+    // Load a BMP file for testing.
+    platform_file_read_result_t bmp_read_result =
+        platform_services->platform_read_entire_file(file_path);
+
+    u64 file_size = bmp_read_result.file_content_size;
+    bmp_header_t *bmp_header =
+        (bmp_header_t *)(bmp_read_result.file_content_buffer);
+
+    ASSERT(bmp_header->bits_per_pixel == 32);
+
+    game_texture_t texture;
+    texture.mask_r = bmp_header->color_mask_r;
+    texture.mask_g = bmp_header->color_mask_g;
+    texture.mask_b = bmp_header->color_mask_b;
+    texture.mask_a = bmp_header->color_mask_a;
+    texture.height = bmp_header->height;
+    texture.width = bmp_header->width;
+
+    texture.pointer = (u32 *)((u8 *)bmp_read_result.file_content_buffer +
+                              bmp_header->bitmap_offset);
+
+    return texture;
+}
+
 #pragma pack(pop)
 
 __declspec(dllexport) void game_render(
@@ -297,25 +376,11 @@ __declspec(dllexport) void game_render(
 
     if (!game_state->is_initialized)
     {
-        // Load a BMP file for testing.
-        platform_file_read_result_t bmp_read_result =
-            platform_services->platform_read_entire_file(
-                "../assets/kenny_colored_tilemap.bmp");
+        game_state->test_texture = load_texture(
+            platform_services, "../assets/kenny_colored_tilemap.bmp");
 
-        u64 file_size = bmp_read_result.file_content_size;
-        bmp_header_t *bmp_header =
-            (bmp_header_t *)(bmp_read_result.file_content_buffer);
-
-        game_state->bitmap_mask_r = bmp_header->color_mask_r;
-        game_state->bitmap_mask_g = bmp_header->color_mask_g;
-        game_state->bitmap_mask_b = bmp_header->color_mask_b;
-        game_state->bitmap_mask_a = bmp_header->color_mask_a;
-        game_state->bitmap_height = bmp_header->height;
-        game_state->bitmap_width = bmp_header->width;
-
-        game_state->bitmap_pointer =
-            (u32 *)((u8 *)bmp_read_result.file_content_buffer +
-                    bmp_header->bitmap_offset);
+        game_state->player_texture =
+            load_texture(platform_services, "../assets/player_sprite.bmp");
 
         // For now, it is assumed that a single meter equals 1/xth of the
         // framebuffer width.
@@ -438,7 +503,8 @@ __declspec(dllexport) void game_render(
     f32 player_movement_speed =
         game_state->pixels_to_meters * 6.0f * game_input->dt_for_frame;
 
-    world_position_t prev_player_position = game_state->player_world_position;
+    game_world_position_t prev_player_position =
+        game_state->player_world_position;
 
     f32 player_new_tile_relative_x_position =
         (game_input->keyboard_state.key_a.is_key_down ? -1 : 0) *
@@ -461,8 +527,8 @@ __declspec(dllexport) void game_render(
     // sprite (players feet in technical terms?) The player center is
     // not used since the player can go near a wall, but will not stop
     // immediately as soon as the player sprite collides with the wall.
-    const f32 player_sprite_width = game_state->pixels_to_meters * 0.75f;
-    const f32 player_sprite_height = game_state->pixels_to_meters * 0.9f;
+    const f32 player_sprite_width = (f32)game_state->player_texture.width;
+    const f32 player_sprite_height = (f32)game_state->player_texture.height;
 
     const b32 test_value = check_point_and_tile_chunk_collision(
         game_world,
@@ -509,7 +575,7 @@ __declspec(dllexport) void game_render(
         }
     }
 
-    world_position_t player_position = game_state->player_world_position;
+    game_world_position_t player_position = game_state->player_world_position;
 
     // Clear screen.
     draw_rectangle(game_framebuffer, 0.0f, 0.0f, (f32)game_framebuffer->width,
@@ -598,29 +664,7 @@ __declspec(dllexport) void game_render(
         GET_TILE_INDEX(player_position.tile_index_y) * game_world->tile_height -
         player_sprite_height;
 
-    draw_rectangle(
-        game_framebuffer,
-        (f32)tile_map_rendering_upper_left_offset_x + player_top_left_x,
-        (f32)tile_map_rendering_upper_left_offset_y + player_top_left_y,
-        (f32)player_sprite_width, (f32)player_sprite_height, 0.2f, 0.7f, 1.0f);
-
-    // NOTE: Test : Rendering the bitmap.
-    u32 *source = game_state->bitmap_pointer;
-
-    for (u32 y = 0; y < game_state->bitmap_height; y++)
-    {
-
-        u32 *destination =
-            (u32 *)(((u32 *)game_framebuffer->backbuffer_memory) +
-                    game_framebuffer->width * y);
-        for (u32 x = 0; x < game_state->bitmap_width; x++)
-        {
-            u32 pixel_color = *source++;
-            u32 red = pixel_color & game_state->bitmap_mask_r;
-            u32 green = pixel_color & game_state->bitmap_mask_g;
-            u32 blue = pixel_color & game_state->bitmap_mask_g;
-
-            *(destination)++ = pixel_color;
-        }
-    }
+    draw_texture(&game_state->player_texture, game_framebuffer,
+                 (tile_map_rendering_upper_left_offset_x + player_top_left_x),
+                 (tile_map_rendering_upper_left_offset_y + player_top_left_y));
 }

@@ -11,8 +11,8 @@
 typedef struct
 {
     u8 *backbuffer_memory;
-    i32 width;
-    i32 height;
+    u32 width;
+    u32 height;
 } game_framebuffer_t;
 
 // NOTE: State changed is used to determine if the state of the key
@@ -62,7 +62,7 @@ typedef struct
     // The other 24 bits are the index of the tile chunk within the world.
     u32 tile_index_x;
     u32 tile_index_y;
-} world_position_t;
+} game_world_position_t;
 
 typedef struct
 {
@@ -85,23 +85,31 @@ typedef struct
     game_tile_chunk_t *tile_chunks;
 } game_world_t;
 
+// NOTE: All textures when loaded into memory are vertically flipped.
 typedef struct
 {
-    world_position_t player_world_position;
+    u32 mask_r;
+    u32 mask_g;
+    u32 mask_b;
+    u32 mask_a;
+
+    u32 height;
+    u32 width;
+
+    u32 *pointer;
+} game_texture_t;
+
+typedef struct
+{
+    game_world_position_t player_world_position;
 
     f32 pixels_to_meters;
 
     game_world_t *game_world;
     arena_allocator_t memory_arena;
 
-    // NOTE: For bitmap loading and testing purposes only.
-    u32 bitmap_mask_r;
-    u32 bitmap_mask_g;
-    u32 bitmap_mask_b;
-    u32 bitmap_mask_a;
-    u32 bitmap_height;
-    u32 bitmap_width;
-    u32 *bitmap_pointer;
+    game_texture_t test_texture;
+    game_texture_t player_texture;
 
     u32 is_initialized;
 } game_state_t;
