@@ -1,6 +1,21 @@
 #ifndef __COMMON__H__
 #define __COMMON__H__
 
+// Determine which compiler is being used.
+#define COMPILER_MSVC 0
+#define COMPILER_LLVM 0
+
+#if defined(_MSC_VER)
+#undef COMPILER_MSVC
+#define COMPILER_MSVC 1
+#else
+#error Only MSVC is currently supported!!!
+#endif
+
+#if defined(COMPILER_MSVC)
+#pragma intrinsic(_BitScanForward)
+#endif
+
 #include <stdint.h>
 
 // Primitive data type aliases.

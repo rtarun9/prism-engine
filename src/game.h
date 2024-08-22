@@ -16,8 +16,7 @@ typedef struct
 } game_framebuffer_t;
 
 // NOTE: State changed is used to determine if the state of the key
-// press has changed since last frame (for example : the value will be true if
-// key was down last frame and no is released).
+// press has changed since last frame.
 typedef struct
 {
     b32 state_changed;
@@ -52,6 +51,14 @@ typedef struct
 #define SET_TILE_INDEX(x, y) (x & 0x00ffffff | y << 24)
 #define SET_TILE_CHUNK_INDEX(x, y) (x & 0xff000000 | y & 0x00ffffff)
 
+#define NUMBER_OF_TILES_PER_CHUNK_X 25
+#define NUMBER_OF_TILES_PER_CHUNK_Y 19
+
+#define NUMBER_OF_CHUNKS_IN_WORLD_X 64
+#define NUMBER_OF_CHUNKS_IN_WORLD_Y 64
+
+#define CHUNK_NOT_LOADED (u32)(-1)
+
 typedef struct
 {
     // The fp offset within a tile.
@@ -69,12 +76,6 @@ typedef struct
     u32 *tile_chunk;
 } game_tile_chunk_t;
 
-#define NUMBER_OF_TILES_PER_CHUNK_X 25
-#define NUMBER_OF_TILES_PER_CHUNK_Y 19
-
-#define NUMBER_OF_CHUNKS_IN_WORLD_X 64
-#define NUMBER_OF_CHUNKS_IN_WORLD_Y 64
-
 // NOTE: Game state will be stored *in* the permanent section of game memory.
 typedef struct
 {
@@ -85,13 +86,14 @@ typedef struct
     game_tile_chunk_t *tile_chunks;
 } game_world_t;
 
-// NOTE: All textures when loaded into memory are vertically flipped.
 typedef struct
 {
-    u32 mask_r;
-    u32 mask_g;
-    u32 mask_b;
-    u32 mask_a;
+    // Given a pixel color, use the following shift values using (pixel >>
+    // shift) & 0xff to extract individual channel values.
+    u32 red_shift;
+    u32 green_shift;
+    u32 blue_shift;
+    u32 alpha_shift;
 
     u32 height;
     u32 width;
