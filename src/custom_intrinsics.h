@@ -50,15 +50,17 @@ inline u32 get_index_of_lsb_set(const u32 value)
 #error LLVM support has not been addedy yet!!
 #else
 #error "This code is for reference only. Control flow should not reach here!!"
-    for (u32 i = 0; i < 32; i++)
     {
-        if ((value >> i) & 1)
+        for (u32 i = 0; i < 32; i++)
         {
-            return i;
+            if ((value >> i) & 1)
+            {
+                return i;
+            }
         }
-    }
 
-    return 0;
+        return 0;
+    }
 #endif
 }
 

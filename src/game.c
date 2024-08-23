@@ -54,7 +54,7 @@ void draw_rectangle(game_framebuffer_t *game_framebuffer, f32 top_left_x,
     u32 green = round_f32_to_u32(normalized_green * 255.0f);
     u32 blue = round_f32_to_u32(normalized_blue * 255.0f);
 
-    // Framebuffer format : BB GG RR xx
+    // Framebuffer format : xx RR GG BB
     u32 pixel_color = blue | (green << 8) | (red << 16);
 
     for (i32 y = min_y; y < max_y; y++)
@@ -103,17 +103,27 @@ void draw_texture(game_texture_t *texture, game_framebuffer_t *framebuffer,
 
             // NOTE: Store the rgba shfit values instead of the mask in the
             // texture struct.
-            u8 alpha = (u8)((pixel_color >> texture->alpha_shift) & 0xff);
-            u8 red = (u8)((pixel_color >> texture->red_shift) & 0xff);
-            u8 green = (u8)((pixel_color >> texture->green_shift) & 0xff);
-            u8 blue = (u8)(pixel_color >> texture->blue_shift) & 0xff;
+            u8 src_alpha = (u8)(pixel_color >> texture->alpha_shift);
 
-            // NOTE: Proper alpha blending?
-            if (alpha != 0)
-            {
-                *(destination)++ =
-                    blue | (green << 8) | (red << 16) | (alpha << 24);
-            }
+            u8 src_red = (u8)(pixel_color >> texture->red_shift);
+            u8 src_green = (u8)(pixel_color >> texture->green_shift);
+            u8 src_blue = (u8)(pixel_color >> texture->blue_shift);
+
+            // Framebuffer format : xx RR GG BB
+            u32 destination_color = *destination;
+            u8 dst_red = (u8)(destination_color >> 16);
+            u8 dst_green = (u8)(destination_color >> 8);
+            u8 dst_blue = (u8)(destination_color);
+
+            f32 t = src_alpha / 255.0f;
+
+            u32 red = round_f32_to_u32(src_red * t + (1.0f - t) * dst_red);
+            u32 green =
+                round_f32_to_u32(src_green * t + (1.0f - t) * dst_green);
+            u32 blue = round_f32_to_u32(src_blue * t + (1.0f - t) * dst_blue);
+
+            // Framebuffer format : xx RR GG BB
+            *(destination)++ = blue | (green << 8) | (red << 16) | (255 << 24);
         }
     }
 }
@@ -324,6 +334,7 @@ typedef struct
     u32 color_mask_b;
     u32 color_mask_a;
 } bmp_header_t;
+#pragma pack(pop)
 
 game_texture_t load_texture(platform_services_t *platform_services,
                             const char *file_path, game_state_t *game_state)
@@ -378,7 +389,33 @@ game_texture_t load_texture(platform_services_t *platform_services,
     return texture;
 }
 
-#pragma pack(pop)
+typedef struct
+{
+    i32 tile_x_diff;
+    i32 tile_y_diff;
+    i32 chunk_x_diff;
+    i32 chunk_y_diff;
+} game_world_position_difference_t;
+
+// Computes a - b.
+game_world_position_difference_t position_difference(
+    game_world_position_t *restrict a, game_world_position_t *restrict b)
+{
+    game_world_position_difference_t result = {0};
+
+    result.tile_x_diff =
+        GET_TILE_INDEX(a->tile_index_x) - GET_TILE_INDEX(b->tile_index_x);
+    result.tile_y_diff =
+        GET_TILE_INDEX(a->tile_index_y) - GET_TILE_INDEX(b->tile_index_y);
+
+    result.chunk_x_diff = GET_TILE_CHUNK_INDEX(a->tile_index_x) -
+                          GET_TILE_CHUNK_INDEX(b->tile_index_x);
+
+    result.chunk_y_diff = GET_TILE_CHUNK_INDEX(a->tile_index_y) -
+                          GET_TILE_CHUNK_INDEX(b->tile_index_y);
+
+    return result;
+}
 
 __declspec(dllexport) void game_render(
     game_memory_allocator_t *restrict game_memory_allocator,
@@ -517,6 +554,14 @@ __declspec(dllexport) void game_render(
         game_state->player_world_position.tile_relative_x = 0.5f;
         game_state->player_world_position.tile_relative_y = 0.5f;
 
+        // The camera should be in the same tile chunk as player, but the tile
+        // index should be in the middle of the chunk. Tile relative x and y
+        // should be zero.
+        game_state->camera_world_position.tile_index_x =
+            SET_TILE_INDEX(0, NUMBER_OF_TILES_PER_CHUNK_X / 2);
+        game_state->camera_world_position.tile_index_y =
+            SET_TILE_INDEX(0, NUMBER_OF_TILES_PER_CHUNK_Y / 2);
+
         game_state->is_initialized = 1;
     }
 
@@ -619,18 +664,48 @@ __declspec(dllexport) void game_render(
     // at the center of the screen.
     f32 tile_map_rendering_upper_left_offset_x =
         game_framebuffer->width / 2.0f -
-        (NUMBER_OF_TILES_PER_CHUNK_X / 2.0f) * game_world->tile_width;
+        GET_TILE_INDEX(game_state->camera_world_position.tile_index_x) *
+            game_world->tile_width -
+        game_world->tile_width / 2.0f;
 
     f32 tile_map_rendering_upper_left_offset_y =
         game_framebuffer->height / 2.0f -
-        (NUMBER_OF_TILES_PER_CHUNK_Y / 2.0f) * game_world->tile_height;
+        GET_TILE_INDEX(game_state->camera_world_position.tile_index_y) *
+            game_world->tile_height -
+        game_world->tile_height / 2.0f;
+
+    game_world_position_difference_t player_and_camera_difference =
+        position_difference(&player_position,
+                            &game_state->camera_world_position);
+
+    if (player_and_camera_difference.chunk_x_diff != 0 ||
+        player_and_camera_difference.chunk_y_diff != 0)
+    {
+        game_state->camera_world_position.tile_index_x = SET_TILE_CHUNK_INDEX(
+            game_state->camera_world_position.tile_index_x,
+            GET_TILE_CHUNK_INDEX(player_position.tile_index_x));
+
+        game_state->camera_world_position.tile_index_y = SET_TILE_CHUNK_INDEX(
+            game_state->camera_world_position.tile_index_y,
+            GET_TILE_CHUNK_INDEX(player_position.tile_index_y));
+    }
+    else
+    {
+        game_state->camera_world_position.tile_index_x = SET_TILE_INDEX(
+            player_position.tile_index_x, NUMBER_OF_TILES_PER_CHUNK_X / 2);
+        game_state->camera_world_position.tile_index_y = SET_TILE_INDEX(
+            player_position.tile_index_y, NUMBER_OF_TILES_PER_CHUNK_Y / 2);
+    }
 
     for (i32 _y = -tiles_viewed_y / 2; _y <= tiles_viewed_y / 2; ++_y)
     {
         for (i32 _x = -tiles_viewed_x / 2; _x <= tiles_viewed_x / 2; ++_x)
         {
-            i32 x = _x + GET_TILE_INDEX(player_position.tile_index_x);
-            i32 y = _y + GET_TILE_INDEX(player_position.tile_index_y);
+
+            i32 x = _x + GET_TILE_INDEX(
+                             game_state->camera_world_position.tile_index_x);
+            i32 y = _y + GET_TILE_INDEX(
+                             game_state->camera_world_position.tile_index_y);
 
             f32 top_left_x = tile_map_rendering_upper_left_offset_x +
                              game_world->tile_width * (x);
@@ -639,8 +714,11 @@ __declspec(dllexport) void game_render(
                              (y)*game_world->tile_height;
 
             corrected_tile_indices_t tile_indices = get_corrected_tile_indices(
-                x, y, GET_TILE_CHUNK_INDEX(player_position.tile_index_x),
-                GET_TILE_CHUNK_INDEX(player_position.tile_index_y));
+                x, y,
+                GET_TILE_CHUNK_INDEX(
+                    game_state->camera_world_position.tile_index_x),
+                GET_TILE_CHUNK_INDEX(
+                    game_state->camera_world_position.tile_index_y));
 
             u32 tile_value =
                 get_value_of_tile_in_world(game_world, tile_indices);

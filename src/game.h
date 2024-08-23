@@ -44,12 +44,12 @@ typedef struct
     u8 *permanent_memory;
 } game_memory_allocator_t;
 
-#define GET_TILE_INDEX(x) (x >> 24)
-#define GET_TILE_CHUNK_INDEX(x) (x & 0x00ffffff)
+#define GET_TILE_INDEX(x) ((x >> 24))
+#define GET_TILE_CHUNK_INDEX(x) ((x & 0x00ffffff))
 
 // X is the tile_index_A, and y is the value.
-#define SET_TILE_INDEX(x, y) (x & 0x00ffffff | y << 24)
-#define SET_TILE_CHUNK_INDEX(x, y) (x & 0xff000000 | y & 0x00ffffff)
+#define SET_TILE_INDEX(x, y) ((x & 0x00ffffff | y << 24))
+#define SET_TILE_CHUNK_INDEX(x, y) ((x & 0xff000000 | y & 0x00ffffff))
 
 #define NUMBER_OF_TILES_PER_CHUNK_X 25
 #define NUMBER_OF_TILES_PER_CHUNK_Y 19
@@ -104,6 +104,7 @@ typedef struct
 typedef struct
 {
     game_world_position_t player_world_position;
+    game_world_position_t camera_world_position;
 
     f32 pixels_to_meters;
 
