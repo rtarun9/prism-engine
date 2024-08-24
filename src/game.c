@@ -571,35 +571,53 @@ __declspec(dllexport) void game_render(
     game_world_t *game_world = (game_world_t *)game_state->game_world;
 
     // Update player position based on input.
-    // Movement speed is in meters / second.
-    f32 player_movement_speed =
-        game_state->pixels_to_meters * 6.0f * game_input->dt_for_frame;
+    // Explanation of the movement logic.
+    // Acceleration is instantaneous.
+    // Integrating over the delta time, velocity becomes (previous velocity) + a
+    // * dt. Then, position = vt + 1/2 at^2.
+    f32 player_movement_speed = game_state->pixels_to_meters * 16.0f;
+
+    vector2_t player_acceleration = {0};
+    player_acceleration.x =
+        (game_input->keyboard_state.key_a.is_key_down ? -1.0f : 0.0f);
+
+    player_acceleration.x +=
+        (game_input->keyboard_state.key_d.is_key_down ? 1.0f : 0.0f);
+
+    player_acceleration.y +=
+        (game_input->keyboard_state.key_w.is_key_down ? -1.0f : 0.0f);
+    player_acceleration.y +=
+        (game_input->keyboard_state.key_s.is_key_down ? 1.0f : 0.0f);
+
+    if (player_acceleration.x && player_acceleration.y)
+    {
+        // 1.0f / sqrt(2) = 0.70710.
+        player_acceleration =
+            vector2_scalar_multiply(player_acceleration, 0.70710f);
+    }
+
+    player_acceleration =
+        vector2_scalar_multiply(player_acceleration, player_movement_speed);
+
+    // Faking friction :)
+    player_acceleration = vector2_subtract(
+        player_acceleration,
+        vector2_scalar_multiply(game_state->player_velocity, 2.5f));
+
+    vector2_t player_velocity = vector2_add(
+        game_state->player_velocity,
+        vector2_scalar_multiply(player_acceleration, game_input->dt_for_frame));
+
+    vector2_t player_new_tile_relative_position = vector2_add(
+        vector2_scalar_multiply(player_velocity, game_input->dt_for_frame),
+        vector2_scalar_multiply(player_acceleration,
+                                0.5f * game_input->dt_for_frame *
+                                    game_input->dt_for_frame));
+
+    game_state->player_velocity = player_velocity;
 
     game_world_position_t prev_player_position =
         game_state->player_world_position;
-
-    vector2_t player_new_tile_relative_position = {0};
-    player_new_tile_relative_position.x =
-        (game_input->keyboard_state.key_a.is_key_down ? -1 : 0) *
-        player_movement_speed;
-    player_new_tile_relative_position.x +=
-        (game_input->keyboard_state.key_d.is_key_down ? 1 : 0) *
-        player_movement_speed;
-
-    player_new_tile_relative_position.y +=
-        (game_input->keyboard_state.key_w.is_key_down ? -1 : 0) *
-        player_movement_speed;
-    player_new_tile_relative_position.y +=
-        (game_input->keyboard_state.key_s.is_key_down ? 1 : 0) *
-        player_movement_speed;
-
-    if (player_new_tile_relative_position.x &&
-        player_new_tile_relative_position.y)
-    {
-        // 1.0f / sqrt(2) = 0.70710.
-        player_new_tile_relative_position = vector2_scalar_multiply(
-            player_new_tile_relative_position, 0.70710f);
-    }
 
     player_new_tile_relative_position =
         vector2_add(player_new_tile_relative_position,
@@ -643,6 +661,10 @@ __declspec(dllexport) void game_render(
                 game_world, player_new_tile_relative_position,
                 prev_player_position.tile_index_x,
                 prev_player_position.tile_index_y);
+        }
+        else
+        {
+            game_state->player_velocity = (vector2_t){0.0f, 0.0f};
         }
     }
 

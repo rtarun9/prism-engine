@@ -106,6 +106,7 @@ typedef struct
     game_world_position_t camera_world_position;
 
     f32 pixels_to_meters;
+    vector2_t player_velocity;
 
     game_world_t *game_world;
     arena_allocator_t memory_arena;
