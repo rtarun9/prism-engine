@@ -3,30 +3,27 @@
 
 #include "common.h"
 
-typedef union {
-    struct
-    {
-        f32 x;
-        f32 y;
-    };
-
-    struct
-    {
-        f32 width;
-        f32 height;
-    };
-
-    f32 m[2];
-} vector2_t;
-
-inline vector2_t create_vector2(f32 x, f32 y)
+#pragma warning(push)
+#pragma warning(disable : 4201)
+typedef struct
 {
-    vector2_t result = {0};
-    result.x = x;
-    result.y = y;
+    union {
+        struct
+        {
+            f32 x;
+            f32 y;
+        };
 
-    return result;
-}
+        struct
+        {
+            f32 width;
+            f32 height;
+        };
+
+        f32 m[2];
+    };
+} vector2_t;
+#pragma warning(pop)
 
 inline vector2_t vector2_add(const vector2_t a, const vector2_t b)
 {

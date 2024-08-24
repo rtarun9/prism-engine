@@ -623,15 +623,14 @@ __declspec(dllexport) void game_render(
               check_point_and_tile_chunk_collision(
                   game_world,
                   vector2_add(player_new_tile_relative_position,
-                              create_vector2(player_sprite_width * 0.5f, 0.0f)),
+                              (vector2_t){player_sprite_width * 0.5f, 0.0f}),
                   prev_player_position.tile_index_x,
                   prev_player_position.tile_index_y) ||
 
               check_point_and_tile_chunk_collision(
                   game_world,
-                  vector2_add(
-                      player_new_tile_relative_position,
-                      create_vector2(-player_sprite_width * 0.5f, 0.0f)),
+                  vector2_add(player_new_tile_relative_position,
+                              (vector2_t){-player_sprite_width * 0.5f, 0.0f}),
                   prev_player_position.tile_index_x,
                   prev_player_position.tile_index_y)))
         {
@@ -650,9 +649,9 @@ __declspec(dllexport) void game_render(
     game_world_position_t player_position = game_state->player_world_position;
 
     // Clear screen.
-    draw_rectangle(game_framebuffer, create_vector2(0.0f, 0.0f),
-                   create_vector2((f32)game_framebuffer->width,
-                                  (f32)game_framebuffer->height),
+    draw_rectangle(game_framebuffer, (vector2_t){0.0f, 0.0f},
+                   (vector2_t){(f32)game_framebuffer->width,
+                               (f32)game_framebuffer->height},
                    1.0f, 1.0f, 1.0f);
 
     // At any moment of time, the number of tiles that can be viewed on
@@ -755,8 +754,8 @@ __declspec(dllexport) void game_render(
 
             vector2_t top_left = vector2_add(
                 tile_map_rendering_upper_left_offset,
-                create_vector2(game_world->tile_dimensions.width * (x),
-                               (y)*game_world->tile_dimensions.height));
+                (vector2_t){game_world->tile_dimensions.width * (x),
+                            (y)*game_world->tile_dimensions.height});
 
             corrected_tile_indices_t tile_indices = get_corrected_tile_indices(
                 x, y,
@@ -797,8 +796,8 @@ __declspec(dllexport) void game_render(
     }
 
     draw_texture(&game_state->test_texture, game_framebuffer,
-                 create_vector2((f32)game_framebuffer->width,
-                                game_framebuffer->height / 2.0f));
+                 (vector2_t){(f32)game_framebuffer->width,
+                             game_framebuffer->height / 2.0f});
 
     vector2_t player_top_left = {0};
     player_top_left.x = player_position.tile_relative_offset.x +

@@ -1,7 +1,6 @@
 #include "win32_main.h"
 #include <stdio.h>
 #include <timeapi.h>
-#include <winnt.h>
 
 // NOTE: Explanation of the rendering logic:
 // The engine allocates memory for its own bitmap and renders into it. GDI's
