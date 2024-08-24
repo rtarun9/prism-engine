@@ -4,26 +4,28 @@
 #include "arena_allocator.h"
 
 #include "custom_intrinsics.h"
+#include "custom_math.h"
 
 // NOTE: This function takes as input the top left coords and width and height.
-void draw_rectangle(game_framebuffer_t *game_framebuffer, f32 top_left_x,
-                    f32 top_left_y, f32 width, f32 height, f32 normalized_red,
-                    f32 normalized_green, f32 normalized_blue)
+void draw_rectangle(game_framebuffer_t *game_framebuffer,
+                    vector2_t top_left_offset, vector2_t width_and_height,
+                    f32 normalized_red, f32 normalized_green,
+                    f32 normalized_blue)
 {
     ASSERT(game_framebuffer);
 
-    ASSERT(width >= 0.0f);
-    ASSERT(height >= 0.0f);
+    ASSERT(width_and_height.x >= 0.0f);
+    ASSERT(width_and_height.y >= 0.0f);
 
     ASSERT(normalized_red >= 0.0f);
     ASSERT(normalized_green >= 0.0f);
     ASSERT(normalized_blue >= 0.0f);
 
-    i32 min_x = round_f32_to_i32(top_left_x);
-    i32 min_y = round_f32_to_i32(top_left_y);
+    i32 min_x = round_f32_to_i32(top_left_offset.x);
+    i32 min_y = round_f32_to_i32(top_left_offset.y);
 
-    i32 max_x = round_f32_to_i32(top_left_x + width);
-    i32 max_y = round_f32_to_i32(top_left_y + height);
+    i32 max_x = round_f32_to_i32(top_left_offset.x + width_and_height.x);
+    i32 max_y = round_f32_to_i32(top_left_offset.y + width_and_height.y);
 
     if (min_x < 0)
     {
@@ -69,10 +71,10 @@ void draw_rectangle(game_framebuffer_t *game_framebuffer, f32 top_left_x,
 }
 
 void draw_texture(game_texture_t *texture, game_framebuffer_t *framebuffer,
-                  f32 top_left_x, f32 top_left_y)
+                  vector2_t top_left_offset)
 {
-    i32 min_x = round_f32_to_i32(top_left_x);
-    i32 min_y = round_f32_to_i32(top_left_y);
+    i32 min_x = round_f32_to_i32(top_left_offset.x);
+    i32 min_y = round_f32_to_i32(top_left_offset.y);
 
     if (min_x < 0)
     {
@@ -243,21 +245,23 @@ internal u32 get_value_of_tile_in_world(game_world_t *restrict world,
                                    tile_indices.tile_y);
 }
 
-internal game_world_position_t get_world_position(game_world_t *world,
-                                                  f32 tile_relative_x,
-                                                  f32 tile_relative_y,
-                                                  i32 tile_indices_x,
-                                                  i32 tile_indices_y)
+internal game_world_position_t
+get_world_position(game_world_t *world, vector2_t tile_relative_offset,
+                   i32 tile_indices_x, i32 tile_indices_y)
 {
     game_world_position_t result = {0};
     result.tile_index_x = 0;
     result.tile_index_y = 0;
 
-    i32 x_offset = floor_f32_to_i32(tile_relative_x / world->tile_width);
-    i32 y_offset = floor_f32_to_i32(tile_relative_y / world->tile_height);
+    i32 x_offset =
+        floor_f32_to_i32(tile_relative_offset.x / world->tile_dimensions.width);
+    i32 y_offset = floor_f32_to_i32(tile_relative_offset.y /
+                                    world->tile_dimensions.height);
 
-    result.tile_relative_x = tile_relative_x - x_offset * world->tile_width;
-    result.tile_relative_y = tile_relative_y - y_offset * world->tile_height;
+    result.tile_relative_offset.x =
+        tile_relative_offset.x - x_offset * world->tile_dimensions.width;
+    result.tile_relative_offset.y =
+        tile_relative_offset.y - y_offset * world->tile_dimensions.height;
 
     i32 tile_x = x_offset + GET_TILE_INDEX(tile_indices_x);
     i32 tile_y = y_offset + GET_TILE_INDEX(tile_indices_y);
@@ -285,15 +289,14 @@ internal game_world_position_t get_world_position(game_world_t *world,
 
 // Returns 1 if collision has occured, and 0 if it did not.
 internal b32 check_point_and_tile_chunk_collision(
-    game_world_t *const world, const f32 tile_relative_x,
-    const f32 tile_relative_y, const i32 current_tile_chunk_x,
-    const i32 current_tile_chunk_y)
+    game_world_t *const world, const vector2_t tile_relative_offset,
+    const i32 current_tile_chunk_x, const i32 current_tile_chunk_y)
 {
     ASSERT(world);
 
     game_world_position_t position =
-        get_world_position(world, tile_relative_x, tile_relative_y,
-                           current_tile_chunk_x, current_tile_chunk_y);
+        get_world_position(world, tile_relative_offset, current_tile_chunk_x,
+                           current_tile_chunk_y);
 
     i32 chunk_x = GET_TILE_CHUNK_INDEX(position.tile_index_x);
     i32 chunk_y = GET_TILE_CHUNK_INDEX(position.tile_index_y);
@@ -450,8 +453,8 @@ __declspec(dllexport) void game_render(
         game_world_t *game_world = (game_world_t *)arena_alloc_default_aligned(
             &game_state->memory_arena, sizeof(game_world_t));
 
-        game_world->tile_width = game_state->pixels_to_meters;
-        game_world->tile_height = game_world->tile_width;
+        game_world->tile_dimensions.width = game_state->pixels_to_meters;
+        game_world->tile_dimensions.height = game_world->tile_dimensions.width;
 
         // The tile chunks for the world is pre-allocated. HOWEVER, tile chunks
         // are sparsely loaded.
@@ -551,8 +554,8 @@ __declspec(dllexport) void game_render(
         game_state->player_world_position.tile_index_x = SET_TILE_INDEX(0, 5);
         game_state->player_world_position.tile_index_y = SET_TILE_INDEX(0, 5);
 
-        game_state->player_world_position.tile_relative_x = 0.5f;
-        game_state->player_world_position.tile_relative_y = 0.5f;
+        game_state->player_world_position.tile_relative_offset.x = 0.5f;
+        game_state->player_world_position.tile_relative_offset.y = 0.5f;
 
         // The camera should be in the same tile chunk as player, but the tile
         // index should be in the middle of the chunk. Tile relative x and y
@@ -575,22 +578,32 @@ __declspec(dllexport) void game_render(
     game_world_position_t prev_player_position =
         game_state->player_world_position;
 
-    f32 player_new_tile_relative_x_position =
+    vector2_t player_new_tile_relative_position = {0};
+    player_new_tile_relative_position.x =
         (game_input->keyboard_state.key_a.is_key_down ? -1 : 0) *
         player_movement_speed;
-    player_new_tile_relative_x_position +=
+    player_new_tile_relative_position.x +=
         (game_input->keyboard_state.key_d.is_key_down ? 1 : 0) *
         player_movement_speed;
 
-    f32 player_new_tile_relative_y_position =
+    player_new_tile_relative_position.y +=
         (game_input->keyboard_state.key_w.is_key_down ? -1 : 0) *
         player_movement_speed;
-    player_new_tile_relative_y_position +=
+    player_new_tile_relative_position.y +=
         (game_input->keyboard_state.key_s.is_key_down ? 1 : 0) *
         player_movement_speed;
 
-    player_new_tile_relative_x_position += prev_player_position.tile_relative_x;
-    player_new_tile_relative_y_position += prev_player_position.tile_relative_y;
+    if (player_new_tile_relative_position.x &&
+        player_new_tile_relative_position.y)
+    {
+        // 1.0f / sqrt(2) = 0.70710.
+        player_new_tile_relative_position = vector2_scalar_multiply(
+            player_new_tile_relative_position, 0.70710f);
+    }
+
+    player_new_tile_relative_position =
+        vector2_add(player_new_tile_relative_position,
+                    prev_player_position.tile_relative_offset);
 
     // The player position will be at the middle bottom of the player
     // sprite (players feet in technical terms?) The player center is
@@ -599,46 +612,36 @@ __declspec(dllexport) void game_render(
     const f32 player_sprite_width = (f32)game_state->player_texture.width;
     const f32 player_sprite_height = (f32)game_state->player_texture.height;
 
-    const b32 test_value = check_point_and_tile_chunk_collision(
-        game_world,
-        player_new_tile_relative_x_position + player_sprite_width * 0.5f,
-        player_new_tile_relative_y_position, prev_player_position.tile_index_x,
-        prev_player_position.tile_index_y);
-
     {
         // NOTE: Assumes that if a chunk is not loaded in a certain place, it is
         // out of bounds.
         if (!(check_point_and_tile_chunk_collision(
-                  game_world, player_new_tile_relative_x_position,
-                  player_new_tile_relative_y_position,
+                  game_world, player_new_tile_relative_position,
                   prev_player_position.tile_index_x,
                   prev_player_position.tile_index_y) ||
 
               check_point_and_tile_chunk_collision(
                   game_world,
-                  player_new_tile_relative_x_position +
-                      player_sprite_width * 0.5f,
-                  player_new_tile_relative_y_position,
+                  vector2_add(player_new_tile_relative_position,
+                              create_vector2(player_sprite_width * 0.5f, 0.0f)),
                   prev_player_position.tile_index_x,
                   prev_player_position.tile_index_y) ||
 
               check_point_and_tile_chunk_collision(
                   game_world,
-                  player_new_tile_relative_x_position -
-                      player_sprite_width * 0.5f,
-                  player_new_tile_relative_y_position,
+                  vector2_add(
+                      player_new_tile_relative_position,
+                      create_vector2(-player_sprite_width * 0.5f, 0.0f)),
                   prev_player_position.tile_index_x,
                   prev_player_position.tile_index_y)))
         {
-
             // Player can move to new position!!! Check for change in
             // current tilemap. Note that this is ONLY done by checking
             // the players position (i.e
             // player_position_collision_check). This should make the
             // code simpler as well.
             game_state->player_world_position = get_world_position(
-                game_world, player_new_tile_relative_x_position,
-                player_new_tile_relative_y_position,
+                game_world, player_new_tile_relative_position,
                 prev_player_position.tile_index_x,
                 prev_player_position.tile_index_y);
         }
@@ -647,32 +650,35 @@ __declspec(dllexport) void game_render(
     game_world_position_t player_position = game_state->player_world_position;
 
     // Clear screen.
-    draw_rectangle(game_framebuffer, 0.0f, 0.0f, (f32)game_framebuffer->width,
-                   (f32)game_framebuffer->height, 1.0f, 1.0f, 1.0f);
+    draw_rectangle(game_framebuffer, create_vector2(0.0f, 0.0f),
+                   create_vector2((f32)game_framebuffer->width,
+                                  (f32)game_framebuffer->height),
+                   1.0f, 1.0f, 1.0f);
 
     // At any moment of time, the number of tiles that can be viewed on
     // the screen is FIXED.
-    const i32 tiles_viewed_x =
-        truncate_f32_to_i32(game_state->pixels_to_meters *
-                            game_framebuffer->width / game_world->tile_width);
+    const i32 tiles_viewed_x = truncate_f32_to_i32(
+        game_state->pixels_to_meters * game_framebuffer->width /
+        game_world->tile_dimensions.width);
 
-    const i32 tiles_viewed_y =
-        truncate_f32_to_i32(game_state->pixels_to_meters *
-                            game_framebuffer->height / game_world->tile_height);
+    const i32 tiles_viewed_y = truncate_f32_to_i32(
+        game_state->pixels_to_meters * game_framebuffer->height /
+        game_world->tile_dimensions.height);
 
     // Rendering offsets. The value are computed such that the current chunk is
     // at the center of the screen.
-    f32 tile_map_rendering_upper_left_offset_x =
+    vector2_t tile_map_rendering_upper_left_offset = {0};
+    tile_map_rendering_upper_left_offset.x =
         game_framebuffer->width / 2.0f -
         GET_TILE_INDEX(game_state->camera_world_position.tile_index_x) *
-            game_world->tile_width -
-        game_world->tile_width / 2.0f;
+            game_world->tile_dimensions.width -
+        game_world->tile_dimensions.width / 2.0f;
 
-    f32 tile_map_rendering_upper_left_offset_y =
+    tile_map_rendering_upper_left_offset.y =
         game_framebuffer->height / 2.0f -
         GET_TILE_INDEX(game_state->camera_world_position.tile_index_y) *
-            game_world->tile_height -
-        game_world->tile_height / 2.0f;
+            game_world->tile_dimensions.height -
+        game_world->tile_dimensions.height / 2.0f;
 
     game_world_position_difference_t player_and_camera_difference =
         position_difference(&player_position,
@@ -681,20 +687,60 @@ __declspec(dllexport) void game_render(
     if (player_and_camera_difference.chunk_x_diff != 0 ||
         player_and_camera_difference.chunk_y_diff != 0)
     {
-        game_state->camera_world_position.tile_index_x = SET_TILE_CHUNK_INDEX(
-            game_state->camera_world_position.tile_index_x,
-            GET_TILE_CHUNK_INDEX(player_position.tile_index_x));
-
-        game_state->camera_world_position.tile_index_y = SET_TILE_CHUNK_INDEX(
-            game_state->camera_world_position.tile_index_y,
-            GET_TILE_CHUNK_INDEX(player_position.tile_index_y));
+        // Now, set the camera position to the same as player. Continue to move
+        // the camera's position until the tile is the center of the chunk.
+        game_state->camera_world_position = player_position;
     }
-    else
+
+    // check if camera tile is the center chunk.
+    u32 camera_tile_x =
+        GET_TILE_INDEX(game_state->camera_world_position.tile_index_x);
+    u32 camera_tile_y =
+        GET_TILE_INDEX(game_state->camera_world_position.tile_index_y);
+
+    if (camera_tile_x != NUMBER_OF_TILES_PER_CHUNK_X / 2 ||
+        camera_tile_y != NUMBER_OF_TILES_PER_CHUNK_Y / 2)
     {
+        u32 current_camera_chunk_center_tile_index_x =
+            NUMBER_OF_TILES_PER_CHUNK_X / 2;
+
+        u32 current_camera_chunk_center_tile_index_y =
+            NUMBER_OF_TILES_PER_CHUNK_Y / 2;
+
+        i32 direction_to_move_camera_to_reach_chunk_center_x =
+            (current_camera_chunk_center_tile_index_x - camera_tile_x);
+
+        if (direction_to_move_camera_to_reach_chunk_center_x > 1)
+        {
+            direction_to_move_camera_to_reach_chunk_center_x = 1;
+        }
+        else if (direction_to_move_camera_to_reach_chunk_center_x < 0)
+        {
+            direction_to_move_camera_to_reach_chunk_center_x = -1;
+        }
+
+        i32 direction_to_move_camera_to_reach_chunk_center_y =
+            (current_camera_chunk_center_tile_index_y - camera_tile_y);
+
+        if (direction_to_move_camera_to_reach_chunk_center_y > 1)
+        {
+            direction_to_move_camera_to_reach_chunk_center_y = 1;
+        }
+        else if (direction_to_move_camera_to_reach_chunk_center_y < 0)
+        {
+            direction_to_move_camera_to_reach_chunk_center_y = -1;
+        }
+
+        // Advance the camera tile by 1.
         game_state->camera_world_position.tile_index_x = SET_TILE_INDEX(
-            player_position.tile_index_x, NUMBER_OF_TILES_PER_CHUNK_X / 2);
+            game_state->camera_world_position.tile_index_x,
+            (GET_TILE_INDEX(game_state->camera_world_position.tile_index_x)) +
+                direction_to_move_camera_to_reach_chunk_center_x);
+
         game_state->camera_world_position.tile_index_y = SET_TILE_INDEX(
-            player_position.tile_index_y, NUMBER_OF_TILES_PER_CHUNK_Y / 2);
+            game_state->camera_world_position.tile_index_y,
+            (GET_TILE_INDEX(game_state->camera_world_position.tile_index_y)) +
+                direction_to_move_camera_to_reach_chunk_center_y);
     }
 
     for (i32 _y = -tiles_viewed_y / 2; _y <= tiles_viewed_y / 2; ++_y)
@@ -707,11 +753,10 @@ __declspec(dllexport) void game_render(
             i32 y = _y + GET_TILE_INDEX(
                              game_state->camera_world_position.tile_index_y);
 
-            f32 top_left_x = tile_map_rendering_upper_left_offset_x +
-                             game_world->tile_width * (x);
-
-            f32 top_left_y = tile_map_rendering_upper_left_offset_y +
-                             (y)*game_world->tile_height;
+            vector2_t top_left = vector2_add(
+                tile_map_rendering_upper_left_offset,
+                create_vector2(game_world->tile_dimensions.width * (x),
+                               (y)*game_world->tile_dimensions.height));
 
             corrected_tile_indices_t tile_indices = get_corrected_tile_indices(
                 x, y,
@@ -725,51 +770,48 @@ __declspec(dllexport) void game_render(
 
             if (tile_value == 1)
             {
-                draw_rectangle(game_framebuffer, (f32)top_left_x,
-                               (f32)top_left_y, (f32)game_world->tile_width,
-                               (f32)game_world->tile_height, 0.4f, 0.1f, 0.4f);
+                draw_rectangle(game_framebuffer, top_left,
+                               game_world->tile_dimensions, 0.4f, 0.1f, 0.4f);
             }
             else if (tile_value == 2)
             {
-                draw_rectangle(game_framebuffer, (f32)top_left_x,
-                               (f32)top_left_y, (f32)game_world->tile_width,
-                               (f32)game_world->tile_height, 0.4f, 0.8f, 0.4f);
+                draw_rectangle(game_framebuffer, top_left,
+                               game_world->tile_dimensions, 0.4f, 0.8f, 0.4f);
             }
             else if (tile_value == 3)
             {
-                draw_rectangle(game_framebuffer, (f32)top_left_x,
-                               (f32)top_left_y, (f32)game_world->tile_width,
-                               (f32)game_world->tile_height, 0.0f, 0.8f, 0.3f);
+                draw_rectangle(game_framebuffer, top_left,
+                               game_world->tile_dimensions, 0.0f, 0.8f, 0.3f);
             }
             else if (tile_value == 9)
             {
-                draw_rectangle(game_framebuffer, (f32)top_left_x,
-                               (f32)top_left_y, (f32)game_world->tile_width,
-                               (f32)game_world->tile_height, 1.0f, 0.8f, 0.4f);
+                draw_rectangle(game_framebuffer, top_left,
+                               game_world->tile_dimensions, 1.0f, 0.8f, 0.4f);
             }
             else if (tile_value != CHUNK_NOT_LOADED)
             {
-                draw_rectangle(game_framebuffer, (f32)top_left_x,
-                               (f32)top_left_y, (f32)game_world->tile_width,
-                               (f32)game_world->tile_height, 0.0f, 0.0f, 0.0f);
+                draw_rectangle(game_framebuffer, top_left,
+                               game_world->tile_dimensions, 0.0f, 0.0f, 0.0f);
             }
         }
     }
 
     draw_texture(&game_state->test_texture, game_framebuffer,
-                 (f32)game_framebuffer->width, game_framebuffer->height / 2.0f);
+                 create_vector2((f32)game_framebuffer->width,
+                                game_framebuffer->height / 2.0f));
 
-    const f32 player_top_left_x =
-        player_position.tile_relative_x +
-        GET_TILE_INDEX(player_position.tile_index_x) * game_world->tile_width -
-        0.5f * player_sprite_width;
+    vector2_t player_top_left = {0};
+    player_top_left.x = player_position.tile_relative_offset.x +
+                        GET_TILE_INDEX(player_position.tile_index_x) *
+                            game_world->tile_dimensions.width -
+                        0.5f * player_sprite_width;
 
-    const f32 player_top_left_y =
-        player_position.tile_relative_y +
-        GET_TILE_INDEX(player_position.tile_index_y) * game_world->tile_height -
-        player_sprite_height;
+    player_top_left.y = player_position.tile_relative_offset.y +
+                        GET_TILE_INDEX(player_position.tile_index_y) *
+                            game_world->tile_dimensions.height -
+                        player_sprite_height;
 
-    draw_texture(&game_state->player_texture, game_framebuffer,
-                 (tile_map_rendering_upper_left_offset_x + player_top_left_x),
-                 (tile_map_rendering_upper_left_offset_y + player_top_left_y));
+    draw_texture(
+        &game_state->player_texture, game_framebuffer,
+        vector2_add(tile_map_rendering_upper_left_offset, player_top_left));
 }

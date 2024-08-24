@@ -7,6 +7,7 @@
 #include "common.h"
 
 #include "arena_allocator.h"
+#include "custom_math.h"
 
 typedef struct
 {
@@ -44,12 +45,12 @@ typedef struct
     u8 *permanent_memory;
 } game_memory_allocator_t;
 
-#define GET_TILE_INDEX(x) ((x >> 24))
-#define GET_TILE_CHUNK_INDEX(x) ((x & 0x00ffffff))
+#define GET_TILE_INDEX(x) (((x) >> 24))
+#define GET_TILE_CHUNK_INDEX(x) (((x) & 0x00ffffff))
 
 // X is the tile_index_A, and y is the value.
-#define SET_TILE_INDEX(x, y) ((x & 0x00ffffff | y << 24))
-#define SET_TILE_CHUNK_INDEX(x, y) ((x & 0xff000000 | y & 0x00ffffff))
+#define SET_TILE_INDEX(x, y) (((x) & 0x00ffffff | (y) << 24))
+#define SET_TILE_CHUNK_INDEX(x, y) (((x) & 0xff000000 | (y) & 0x00ffffff))
 
 #define NUMBER_OF_TILES_PER_CHUNK_X 25
 #define NUMBER_OF_TILES_PER_CHUNK_Y 19
@@ -62,8 +63,7 @@ typedef struct
 typedef struct
 {
     // The fp offset within a tile.
-    f32 tile_relative_x;
-    f32 tile_relative_y;
+    vector2_t tile_relative_offset;
 
     // The 8 MSB bits are the index of tile within tile chunk.
     // The other 24 bits are the index of the tile chunk within the world.
@@ -80,8 +80,7 @@ typedef struct
 typedef struct
 {
     // Dimensions of each tile in the tile chunk.
-    f32 tile_width;
-    f32 tile_height;
+    vector2_t tile_dimensions;
 
     game_tile_chunk_t *tile_chunks;
 } game_world_t;
