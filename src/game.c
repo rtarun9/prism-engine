@@ -6,9 +6,12 @@
 #include "custom_intrinsics.h"
 #include "custom_math.h"
 
-// NOTE: This function takes as input the top left coords and width and height.
+// NOTE: This function takes as input the bottom left coords and width and
+// height.
+// The world has y that increases in the up direction, but the framebuffer's
+// origin is the top left.
 void draw_rectangle(game_framebuffer_t *game_framebuffer,
-                    vector2_t top_left_offset, vector2_t width_and_height,
+                    vector2_t bottom_left_offset, vector2_t width_and_height,
                     f32 normalized_red, f32 normalized_green,
                     f32 normalized_blue)
 {
@@ -21,11 +24,11 @@ void draw_rectangle(game_framebuffer_t *game_framebuffer,
     ASSERT(normalized_green >= 0.0f);
     ASSERT(normalized_blue >= 0.0f);
 
-    i32 min_x = round_f32_to_i32(top_left_offset.x);
-    i32 min_y = round_f32_to_i32(top_left_offset.y);
+    i32 min_x = round_f32_to_i32(bottom_left_offset.x);
+    i32 min_y = round_f32_to_i32(bottom_left_offset.y);
 
-    i32 max_x = round_f32_to_i32(top_left_offset.x + width_and_height.x);
-    i32 max_y = round_f32_to_i32(top_left_offset.y + width_and_height.y);
+    i32 max_x = round_f32_to_i32(bottom_left_offset.x + width_and_height.x);
+    i32 max_y = round_f32_to_i32(bottom_left_offset.y + width_and_height.y);
 
     if (min_x < 0)
     {
@@ -37,14 +40,14 @@ void draw_rectangle(game_framebuffer_t *game_framebuffer,
         min_y = 0;
     }
 
-    if (max_x > (i32)game_framebuffer->width)
+    if (max_x >= (i32)game_framebuffer->width)
     {
-        max_x = game_framebuffer->width;
+        max_x = game_framebuffer->width - 1;
     }
 
-    if (max_y > (i32)game_framebuffer->height)
+    if (max_y >= (i32)game_framebuffer->height)
     {
-        max_y = game_framebuffer->height;
+        max_y = game_framebuffer->height - 1;
     }
 
     u8 *row = (game_framebuffer->backbuffer_memory + min_x * 4 +
@@ -59,10 +62,10 @@ void draw_rectangle(game_framebuffer_t *game_framebuffer,
     // Framebuffer format : xx RR GG BB
     u32 pixel_color = blue | (green << 8) | (red << 16);
 
-    for (i32 y = min_y; y < max_y; y++)
+    for (i32 y = min_y; y <= max_y; y++)
     {
         u32 *pixel = (u32 *)row;
-        for (i32 x = min_x; x < max_x; x++)
+        for (i32 x = min_x; x <= max_x; x++)
         {
             *pixel++ = pixel_color;
         }
@@ -70,34 +73,74 @@ void draw_rectangle(game_framebuffer_t *game_framebuffer,
     }
 }
 
+// The world has y that increases in the up direction, but the framebuffer's
+// origin is the top left.
 void draw_texture(game_texture_t *texture, game_framebuffer_t *framebuffer,
-                  vector2_t top_left_offset)
+                  vector2_t bottom_left_offset)
 {
-    i32 min_x = round_f32_to_i32(top_left_offset.x);
-    i32 min_y = round_f32_to_i32(top_left_offset.y);
+    i32 min_x = round_f32_to_i32(bottom_left_offset.x);
+    i32 min_y = round_f32_to_i32(bottom_left_offset.y);
+
+    i32 clip_x = 0;
+    i32 clip_y = 0;
 
     if (min_x < 0)
     {
+        clip_x = -min_x;
         min_x = 0;
     }
 
     if (min_y < 0)
     {
+        clip_y = -min_y;
         min_y = 0;
+    }
+
+    i32 max_x = round_f32_to_i32(bottom_left_offset.x + texture->width);
+    i32 max_y = round_f32_to_i32(bottom_left_offset.y + texture->height);
+
+    if (max_x >= (i32)framebuffer->width)
+    {
+        clip_x = max_x - framebuffer->width;
+        max_x = framebuffer->width - 1;
+    }
+
+    if (max_y >= (i32)framebuffer->height)
+    {
+        clip_y = max_y - framebuffer->height;
+        max_y = framebuffer->height - 1;
     }
 
     u32 *source = texture->pointer;
 
-    u32 blit_width = texture->width > framebuffer->width ? framebuffer->width
-                                                         : texture->width;
+    u32 blit_width = (texture->width > framebuffer->width ? framebuffer->width
+                                                          : texture->width);
     u32 blit_height = texture->height > framebuffer->height
                           ? framebuffer->height
                           : texture->height;
 
+    if ((i32)blit_width - clip_x < 0)
+    {
+        blit_width = 0;
+    }
+    else
+    {
+        blit_width -= clip_x;
+    }
+
+    if ((i32)blit_height - clip_y < 0)
+    {
+        blit_height = 0;
+    }
+    else
+    {
+        blit_height -= clip_y;
+    }
+
     for (u32 y = 0; y < blit_height; y++)
     {
         u32 *destination = ((u32 *)framebuffer->backbuffer_memory + (u32)min_x +
-                            framebuffer->width * (y + (u32)min_y));
+                            framebuffer->width * (min_y + y));
 
         for (u32 x = 0; x < blit_width; x++)
         {
@@ -153,9 +196,9 @@ internal corrected_tile_indices_t get_corrected_tile_indices(i32 tile_x,
         // and abs(tile_x) > number of tiles per chunk. Similar logic applies
         // for y.
         i32 chunks_to_shift =
-            floor_f32_to_i32(tile_x / (f32)NUMBER_OF_TILES_PER_CHUNK_X);
-        chunk_x += chunks_to_shift;
-        tile_x -= chunks_to_shift * NUMBER_OF_TILES_PER_CHUNK_X;
+            -floor_f32_to_i32(tile_x / (f32)NUMBER_OF_TILES_PER_CHUNK_X);
+        chunk_x -= chunks_to_shift;
+        tile_x += chunks_to_shift * NUMBER_OF_TILES_PER_CHUNK_X;
     }
     else if (tile_x >= NUMBER_OF_TILES_PER_CHUNK_X)
     {
@@ -168,15 +211,15 @@ internal corrected_tile_indices_t get_corrected_tile_indices(i32 tile_x,
     if (tile_y < 0)
     {
         i32 chunks_to_shift =
-            floor_f32_to_i32(tile_y / (f32)NUMBER_OF_TILES_PER_CHUNK_Y);
+            -floor_f32_to_i32(tile_y / (f32)NUMBER_OF_TILES_PER_CHUNK_Y);
         chunk_y -= chunks_to_shift;
-        tile_y -= chunks_to_shift * NUMBER_OF_TILES_PER_CHUNK_Y;
+        tile_y += chunks_to_shift * NUMBER_OF_TILES_PER_CHUNK_Y;
     }
     else if (tile_y >= NUMBER_OF_TILES_PER_CHUNK_Y)
     {
         i32 chunks_to_shift =
             floor_f32_to_i32(tile_y / (f32)NUMBER_OF_TILES_PER_CHUNK_Y);
-        chunk_y -= chunks_to_shift;
+        chunk_y += chunks_to_shift;
         tile_y -= chunks_to_shift * NUMBER_OF_TILES_PER_CHUNK_Y;
     }
 
@@ -210,6 +253,9 @@ internal corrected_tile_indices_t get_corrected_tile_indices(i32 tile_x,
 }
 
 // Assumes that the tile x / y and chunk x / y values are corrected.
+// NOTE: In the world, postive y goes up, but in memory y goes in the opposite
+// direction. The function handles this case by modifying y to
+// NUMBER_OF_TILES_PER_CHUNK_Y - y.
 internal u32 get_value_in_tile_chunk(game_tile_chunk_t *restrict tile_chunk,
                                      u32 x, u32 y)
 {
@@ -223,10 +269,31 @@ internal u32 get_value_in_tile_chunk(game_tile_chunk_t *restrict tile_chunk,
         return CHUNK_NOT_LOADED;
     }
 
-    return tile_chunk->tile_chunk[x + y * NUMBER_OF_TILES_PER_CHUNK_X];
+    return tile_chunk->tile_chunk[x + (NUMBER_OF_TILES_PER_CHUNK_Y - 1 - y) *
+                                          NUMBER_OF_TILES_PER_CHUNK_X];
+}
+
+internal void set_value_in_tile_chunk(game_tile_chunk_t *restrict tile_chunk,
+                                      u32 x, u32 y, u32 value)
+{
+    ASSERT(tile_chunk);
+
+    ASSERT(x < NUMBER_OF_TILES_PER_CHUNK_X);
+    ASSERT(y < NUMBER_OF_TILES_PER_CHUNK_Y);
+
+    if (tile_chunk->tile_chunk == NULL)
+    {
+        return;
+    }
+
+    tile_chunk->tile_chunk[x + (NUMBER_OF_TILES_PER_CHUNK_Y - 1 - y) *
+                                   NUMBER_OF_TILES_PER_CHUNK_X] = value;
 }
 
 // Returns CHUNK_NOT_LOADED if the chunk isn't loaded :)
+// NOTE: In the world, postive y goes up, but in memory y goes in the opposite
+// direction. The function handles this case by modifying y to
+// NUMBER_OF_TILES_PER_CHUNK_Y - y.
 internal u32 get_value_of_tile_in_world(game_world_t *restrict world,
                                         corrected_tile_indices_t tile_indices)
 {
@@ -237,12 +304,29 @@ internal u32 get_value_of_tile_in_world(game_world_t *restrict world,
 
     game_tile_chunk_t *tile_chunk =
         &world->tile_chunks[tile_indices.chunk_x +
-                            tile_indices.chunk_y * NUMBER_OF_CHUNKS_IN_WORLD_X];
+                            (NUMBER_OF_CHUNKS_IN_WORLD_Y - 1 -
+                             tile_indices.chunk_y) *
+                                NUMBER_OF_CHUNKS_IN_WORLD_X];
 
     ASSERT(tile_chunk);
 
     return get_value_in_tile_chunk(tile_chunk, tile_indices.tile_x,
                                    tile_indices.tile_y);
+}
+
+internal game_tile_chunk_t *get_tile_chunk(game_world_t *restrict world, u32 x,
+                                           u32 y)
+{
+    ASSERT(world);
+
+    ASSERT(x < NUMBER_OF_CHUNKS_IN_WORLD_X);
+    ASSERT(y < NUMBER_OF_CHUNKS_IN_WORLD_Y);
+
+    game_tile_chunk_t *tile_chunk =
+        &world->tile_chunks[x + (NUMBER_OF_CHUNKS_IN_WORLD_Y - 1 - y) *
+                                    NUMBER_OF_CHUNKS_IN_WORLD_X];
+
+    return tile_chunk;
 }
 
 internal game_world_position_t
@@ -339,8 +423,9 @@ typedef struct
 } bmp_header_t;
 #pragma pack(pop)
 
-game_texture_t load_texture(platform_services_t *platform_services,
-                            const char *file_path, game_state_t *game_state)
+game_texture_t load_texture(platform_services_t *restrict platform_services,
+                            const char *file_path,
+                            game_state_t *restrict game_state)
 {
     platform_file_read_result_t bmp_read_result =
         platform_services->platform_read_entire_file(file_path);
@@ -355,13 +440,12 @@ game_texture_t load_texture(platform_services_t *platform_services,
         sizeof(u32), sizeof(u32));
 
     // Now that the bmp file has been read succesfully, copy it u32 by u32 into
-    // game state such that the vertical flipping is eliminated.
+    // game_state.
     {
         u32 *source = (u32 *)((u8 *)bmp_read_result.file_content_buffer +
                               bmp_header->bitmap_offset);
 
-        u32 *source_row =
-            source + (bmp_header->width * (bmp_header->height - 1));
+        u32 *source_row = source;
 
         u32 *destination_pixel = texture_pointer;
 
@@ -372,7 +456,7 @@ game_texture_t load_texture(platform_services_t *platform_services,
             {
                 *destination_pixel++ = *source_pixel++;
             }
-            source_row -= bmp_header->width;
+            source_row += bmp_header->width;
         }
     }
 
@@ -453,11 +537,11 @@ __declspec(dllexport) void game_render(
         game_world_t *game_world = (game_world_t *)arena_alloc_default_aligned(
             &game_state->memory_arena, sizeof(game_world_t));
 
-        game_world->tile_dimensions.width = game_state->pixels_to_meters;
+        game_world->tile_dimensions.width = game_state->pixels_to_meters * 1.2f;
         game_world->tile_dimensions.height = game_world->tile_dimensions.width;
 
-        // The tile chunks for the world is pre-allocated. HOWEVER, tile chunks
-        // are sparsely loaded.
+        // The tile chunks for the world is pre-allocated. HOWEVER, the tile
+        // array inside of the tile chunks are sparsely loaded.
         game_world->tile_chunks = (game_tile_chunk_t *)arena_alloc_array(
             &game_state->memory_arena,
             NUMBER_OF_CHUNKS_IN_WORLD_X * NUMBER_OF_CHUNKS_IN_WORLD_Y,
@@ -471,13 +555,10 @@ __declspec(dllexport) void game_render(
             for (i32 chunk_x = 0; chunk_x < NUMBER_OF_CHUNKS_IN_WORLD_X;
                  chunk_x++)
             {
-                if (chunk_x == 0 || (chunk_x == 1 && chunk_y == 3))
+                if (chunk_x == 0 || (chunk_x == 1 && chunk_y == 1))
                 {
-                    u32 tile_value = (chunk_x + 1);
-
-                    game_tile_chunk_t *basic_tile_chunk =
-                        &game_state->game_world->tile_chunks
-                             [chunk_x + chunk_y * NUMBER_OF_CHUNKS_IN_WORLD_X];
+                    game_tile_chunk_t *basic_tile_chunk = get_tile_chunk(
+                        game_state->game_world, chunk_x, chunk_y);
 
                     basic_tile_chunk->tile_chunk = (u32 *)arena_alloc_array(
                         &game_state->memory_arena,
@@ -490,56 +571,44 @@ __declspec(dllexport) void game_render(
                          tile_y++)
                     {
 
-                        basic_tile_chunk
-                            ->tile_chunk[0 +
-                                         tile_y * NUMBER_OF_TILES_PER_CHUNK_X] =
-                            tile_value;
-
-                        basic_tile_chunk
-                            ->tile_chunk[(NUMBER_OF_TILES_PER_CHUNK_X - 1) +
-                                         tile_y * NUMBER_OF_TILES_PER_CHUNK_X] =
-                            tile_value;
+                        set_value_in_tile_chunk(basic_tile_chunk, 0, tile_y,
+                                                TILE_WALL);
+                        set_value_in_tile_chunk(basic_tile_chunk,
+                                                NUMBER_OF_TILES_PER_CHUNK_X - 1,
+                                                tile_y, TILE_WALL);
                     }
 
-                    basic_tile_chunk
-                        ->tile_chunk[(NUMBER_OF_TILES_PER_CHUNK_X - 1) +
-                                     (NUMBER_OF_TILES_PER_CHUNK_Y / 2) *
-                                         NUMBER_OF_TILES_PER_CHUNK_X] = 0;
+                    set_value_in_tile_chunk(
+                        basic_tile_chunk, NUMBER_OF_TILES_PER_CHUNK_X - 1,
+                        NUMBER_OF_TILES_PER_CHUNK_Y / 2, TILE_EMPTY);
 
-                    basic_tile_chunk
-                        ->tile_chunk[(0) + (NUMBER_OF_TILES_PER_CHUNK_Y / 2) *
-                                               NUMBER_OF_TILES_PER_CHUNK_X] = 0;
+                    set_value_in_tile_chunk(basic_tile_chunk, 0,
+                                            NUMBER_OF_TILES_PER_CHUNK_Y / 2,
+                                            TILE_EMPTY);
 
                     // Set the top and bottom border as obstacles.
                     for (i32 tile_x = 0; tile_x < NUMBER_OF_TILES_PER_CHUNK_X;
                          tile_x++)
                     {
-                        basic_tile_chunk
-                            ->tile_chunk[tile_x +
-                                         0 * NUMBER_OF_TILES_PER_CHUNK_X] =
-                            tile_value;
+                        set_value_in_tile_chunk(basic_tile_chunk, tile_x, 0,
+                                                TILE_WALL);
 
-                        basic_tile_chunk
-                            ->tile_chunk[tile_x +
-                                         (NUMBER_OF_TILES_PER_CHUNK_Y - 1) *
-                                             NUMBER_OF_TILES_PER_CHUNK_X] =
-                            tile_value;
+                        set_value_in_tile_chunk(basic_tile_chunk, tile_x,
+                                                NUMBER_OF_TILES_PER_CHUNK_Y - 1,
+                                                TILE_WALL);
                     }
 
-                    basic_tile_chunk
-                        ->tile_chunk[(NUMBER_OF_TILES_PER_CHUNK_X / 2) +
-                                     (0) * NUMBER_OF_TILES_PER_CHUNK_X] = 0;
+                    set_value_in_tile_chunk(basic_tile_chunk,
+                                            NUMBER_OF_TILES_PER_CHUNK_X / 2, 0,
+                                            TILE_EMPTY);
 
-                    basic_tile_chunk
-                        ->tile_chunk[(NUMBER_OF_TILES_PER_CHUNK_X / 2) +
-                                     (NUMBER_OF_TILES_PER_CHUNK_Y - 1) *
-                                         NUMBER_OF_TILES_PER_CHUNK_X] = 0;
+                    set_value_in_tile_chunk(
+                        basic_tile_chunk, NUMBER_OF_TILES_PER_CHUNK_X / 2,
+                        NUMBER_OF_TILES_PER_CHUNK_Y - 1, TILE_EMPTY);
 
-                    basic_tile_chunk
-                        ->tile_chunk[(NUMBER_OF_TILES_PER_CHUNK_X / 2) +
-                                     (NUMBER_OF_TILES_PER_CHUNK_Y / 2) *
-                                         NUMBER_OF_TILES_PER_CHUNK_X] =
-                        tile_value;
+                    set_value_in_tile_chunk(
+                        basic_tile_chunk, NUMBER_OF_TILES_PER_CHUNK_X / 2,
+                        NUMBER_OF_TILES_PER_CHUNK_Y / 2, TILE_WALL);
                 }
             }
         }
@@ -585,9 +654,9 @@ __declspec(dllexport) void game_render(
         (game_input->keyboard_state.key_d.is_key_down ? 1.0f : 0.0f);
 
     player_acceleration.y +=
-        (game_input->keyboard_state.key_w.is_key_down ? -1.0f : 0.0f);
+        (game_input->keyboard_state.key_w.is_key_down ? 1.0f : 0.0f);
     player_acceleration.y +=
-        (game_input->keyboard_state.key_s.is_key_down ? 1.0f : 0.0f);
+        (game_input->keyboard_state.key_s.is_key_down ? -1.0f : 0.0f);
 
     if (player_acceleration.x && player_acceleration.y)
     {
@@ -627,6 +696,7 @@ __declspec(dllexport) void game_render(
     // sprite (players feet in technical terms?) The player center is
     // not used since the player can go near a wall, but will not stop
     // immediately as soon as the player sprite collides with the wall.
+    // const f32 player_sprite_width = (f32)game_state->player_texture.width;
     const f32 player_sprite_width = (f32)game_state->player_texture.width;
     const f32 player_sprite_height = (f32)game_state->player_texture.height;
 
@@ -688,14 +758,14 @@ __declspec(dllexport) void game_render(
 
     // Rendering offsets. The value are computed such that the current chunk is
     // at the center of the screen.
-    vector2_t tile_map_rendering_upper_left_offset = {0};
-    tile_map_rendering_upper_left_offset.x =
+    vector2_t tile_map_rendering_bottom_left_offset = {0};
+    tile_map_rendering_bottom_left_offset.x =
         game_framebuffer->width / 2.0f -
         GET_TILE_INDEX(game_state->camera_world_position.tile_index_x) *
             game_world->tile_dimensions.width -
         game_world->tile_dimensions.width / 2.0f;
 
-    tile_map_rendering_upper_left_offset.y =
+    tile_map_rendering_bottom_left_offset.y =
         game_framebuffer->height / 2.0f -
         GET_TILE_INDEX(game_state->camera_world_position.tile_index_y) *
             game_world->tile_dimensions.height -
@@ -774,8 +844,8 @@ __declspec(dllexport) void game_render(
             i32 y = _y + GET_TILE_INDEX(
                              game_state->camera_world_position.tile_index_y);
 
-            vector2_t top_left = vector2_add(
-                tile_map_rendering_upper_left_offset,
+            vector2_t bottom_left = vector2_add(
+                tile_map_rendering_bottom_left_offset,
                 (vector2_t){game_world->tile_dimensions.width * (x),
                             (y)*game_world->tile_dimensions.height});
 
@@ -789,29 +859,20 @@ __declspec(dllexport) void game_render(
             u32 tile_value =
                 get_value_of_tile_in_world(game_world, tile_indices);
 
-            if (tile_value == 1)
+            if (tile_value == TILE_WALL)
             {
-                draw_rectangle(game_framebuffer, top_left,
+                draw_rectangle(game_framebuffer, bottom_left,
                                game_world->tile_dimensions, 0.4f, 0.1f, 0.4f);
             }
-            else if (tile_value == 2)
+            else if (tile_value == TILE_EMPTY)
+
             {
-                draw_rectangle(game_framebuffer, top_left,
-                               game_world->tile_dimensions, 0.4f, 0.8f, 0.4f);
-            }
-            else if (tile_value == 3)
-            {
-                draw_rectangle(game_framebuffer, top_left,
-                               game_world->tile_dimensions, 0.0f, 0.8f, 0.3f);
-            }
-            else if (tile_value == 9)
-            {
-                draw_rectangle(game_framebuffer, top_left,
-                               game_world->tile_dimensions, 1.0f, 0.8f, 0.4f);
+                draw_rectangle(game_framebuffer, bottom_left,
+                               game_world->tile_dimensions, 0.0f, 0.0f, 1.0f);
             }
             else if (tile_value != CHUNK_NOT_LOADED)
             {
-                draw_rectangle(game_framebuffer, top_left,
+                draw_rectangle(game_framebuffer, bottom_left,
                                game_world->tile_dimensions, 0.0f, 0.0f, 0.0f);
             }
         }
@@ -821,18 +882,18 @@ __declspec(dllexport) void game_render(
                  (vector2_t){(f32)game_framebuffer->width,
                              game_framebuffer->height / 2.0f});
 
-    vector2_t player_top_left = {0};
-    player_top_left.x = player_position.tile_relative_offset.x +
-                        GET_TILE_INDEX(player_position.tile_index_x) *
-                            game_world->tile_dimensions.width -
-                        0.5f * player_sprite_width;
+    vector2_t player_bottom_left = {0};
+    player_bottom_left.x = player_position.tile_relative_offset.x +
+                           GET_TILE_INDEX(player_position.tile_index_x) *
+                               game_world->tile_dimensions.width -
+                           0.5f * player_sprite_width;
 
-    player_top_left.y = player_position.tile_relative_offset.y +
-                        GET_TILE_INDEX(player_position.tile_index_y) *
-                            game_world->tile_dimensions.height -
-                        player_sprite_height;
+    player_bottom_left.y = player_position.tile_relative_offset.y +
+                           GET_TILE_INDEX(player_position.tile_index_y) *
+                               game_world->tile_dimensions.height -
+                           player_sprite_height;
 
     draw_texture(
         &game_state->player_texture, game_framebuffer,
-        vector2_add(tile_map_rendering_upper_left_offset, player_top_left));
+        vector2_add(tile_map_rendering_bottom_left_offset, player_bottom_left));
 }

@@ -43,12 +43,10 @@ internal void win32_resize_bitmap(const i32 width, const i32 height)
 
     // Setup the bitmap info struct
 
-    // NOTE: the negative height, this is to ensure that the bitmap is
-    // a top down DIB.
     g_offscreen_framebuffer.bitmap_info_header.biSize =
         sizeof(BITMAPINFOHEADER);
     g_offscreen_framebuffer.bitmap_info_header.biWidth = width;
-    g_offscreen_framebuffer.bitmap_info_header.biHeight = -1 * height;
+    g_offscreen_framebuffer.bitmap_info_header.biHeight = 1 * height;
     g_offscreen_framebuffer.bitmap_info_header.biPlanes = 1;
     g_offscreen_framebuffer.bitmap_info_header.biBitCount = 32;
     g_offscreen_framebuffer.bitmap_info_header.biCompression = BI_RGB;
@@ -64,7 +62,7 @@ internal void win32_update_backbuffer(const HDC device_context,
 
     StretchDIBits(device_context, 0, 0, window_width, window_height, 0, 0,
                   g_offscreen_framebuffer.bitmap_info_header.biWidth,
-                  g_offscreen_framebuffer.bitmap_info_header.biHeight * -1,
+                  g_offscreen_framebuffer.bitmap_info_header.biHeight,
                   (void *)g_offscreen_framebuffer.backbuffer_memory,
                   &bitmap_info, DIB_RGB_COLORS, SRCCOPY);
 }
@@ -590,7 +588,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
         game_framebuffer.width =
             g_offscreen_framebuffer.bitmap_info_header.biWidth;
         game_framebuffer.height =
-            g_offscreen_framebuffer.bitmap_info_header.biHeight * -1;
+            g_offscreen_framebuffer.bitmap_info_header.biHeight;
 
         game_memory_allocator_t game_memory_allocator = {0};
         game_memory_allocator.permanent_memory_size =

@@ -45,6 +45,10 @@ typedef struct
     u8 *permanent_memory;
 } game_memory_allocator_t;
 
+// Note : In the tile 'chunk' dimension, y increases as you go down.
+// However, within a tile chunk, y increases as you go up.
+// TODO: Think whether tile chunks should also start at the bottom left instead
+// of top left?
 #define GET_TILE_INDEX(x) (((x) >> 24))
 #define GET_TILE_CHUNK_INDEX(x) (((x) & 0x00ffffff))
 
@@ -52,13 +56,15 @@ typedef struct
 #define SET_TILE_INDEX(x, y) (((x) & 0x00ffffff | (y) << 24))
 #define SET_TILE_CHUNK_INDEX(x, y) (((x) & 0xff000000 | (y) & 0x00ffffff))
 
-#define NUMBER_OF_TILES_PER_CHUNK_X 25
+#define NUMBER_OF_TILES_PER_CHUNK_X 19
 #define NUMBER_OF_TILES_PER_CHUNK_Y 19
 
-#define NUMBER_OF_CHUNKS_IN_WORLD_X 64
-#define NUMBER_OF_CHUNKS_IN_WORLD_Y 64
+#define NUMBER_OF_CHUNKS_IN_WORLD_X 4
+#define NUMBER_OF_CHUNKS_IN_WORLD_Y 4
 
 #define CHUNK_NOT_LOADED (u32)(-1)
+#define TILE_WALL 1
+#define TILE_EMPTY 0
 
 typedef struct
 {
