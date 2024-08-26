@@ -52,4 +52,10 @@ inline vector2_t vector2_scalar_multiply(const vector2_t a, const f32 scalar)
 
     return result;
 }
+
+inline f32 vector2_dot(const vector2_t a, const vector2_t b)
+{
+    return a.x * b.x + a.y * b.y;
+}
+
 #endif

@@ -373,14 +373,9 @@ get_world_position(game_world_t *world, vector2_t tile_relative_offset,
 
 // Returns 1 if collision has occured, and 0 if it did not.
 internal b32 check_point_and_tile_chunk_collision(
-    game_world_t *const world, const vector2_t tile_relative_offset,
-    const i32 current_tile_chunk_x, const i32 current_tile_chunk_y)
+    game_world_t *const world, game_world_position_t position)
 {
     ASSERT(world);
-
-    game_world_position_t position =
-        get_world_position(world, tile_relative_offset, current_tile_chunk_x,
-                           current_tile_chunk_y);
 
     i32 chunk_x = GET_TILE_CHUNK_INDEX(position.tile_index_x);
     i32 chunk_y = GET_TILE_CHUNK_INDEX(position.tile_index_y);
@@ -700,27 +695,49 @@ __declspec(dllexport) void game_render(
     const f32 player_sprite_width = (f32)game_state->player_texture.width;
     const f32 player_sprite_height = (f32)game_state->player_texture.height;
 
+    game_world_position_t new_player_position =
+        game_state->player_world_position;
+    new_player_position.tile_relative_offset =
+        vector2_add(prev_player_position.tile_relative_offset,
+                    player_new_tile_relative_position);
+
+    game_world_position_t player_right = get_world_position(
+        game_world,
+        vector2_add(player_new_tile_relative_position,
+                    (vector2_t){player_sprite_width * 0.5f, 0.0f}),
+        prev_player_position.tile_index_x, prev_player_position.tile_index_y);
+
+    game_world_position_t player_left = get_world_position(
+        game_world,
+        vector2_add(player_new_tile_relative_position,
+                    (vector2_t){-player_sprite_width * 0.5f, 0.0f}),
+        prev_player_position.tile_index_x, prev_player_position.tile_index_y);
+
+    game_world_position_t player_position_that_collided_with_tilemap = {};
+    b32 player_collided = 0;
+
+    if (check_point_and_tile_chunk_collision(game_world, new_player_position))
+    {
+        player_position_that_collided_with_tilemap = new_player_position;
+        player_collided = 1;
+    }
+
+    if (check_point_and_tile_chunk_collision(game_world, player_right))
+    {
+        player_position_that_collided_with_tilemap = player_right;
+        player_collided = 1;
+    }
+
+    if (check_point_and_tile_chunk_collision(game_world, player_left))
+    {
+        player_position_that_collided_with_tilemap = player_left;
+        player_collided = 1;
+    }
+
     {
         // NOTE: Assumes that if a chunk is not loaded in a certain place, it is
         // out of bounds.
-        if (!(check_point_and_tile_chunk_collision(
-                  game_world, player_new_tile_relative_position,
-                  prev_player_position.tile_index_x,
-                  prev_player_position.tile_index_y) ||
-
-              check_point_and_tile_chunk_collision(
-                  game_world,
-                  vector2_add(player_new_tile_relative_position,
-                              (vector2_t){player_sprite_width * 0.5f, 0.0f}),
-                  prev_player_position.tile_index_x,
-                  prev_player_position.tile_index_y) ||
-
-              check_point_and_tile_chunk_collision(
-                  game_world,
-                  vector2_add(player_new_tile_relative_position,
-                              (vector2_t){-player_sprite_width * 0.5f, 0.0f}),
-                  prev_player_position.tile_index_x,
-                  prev_player_position.tile_index_y)))
+        if (!player_collided)
         {
             // Player can move to new position!!! Check for change in
             // current tilemap. Note that this is ONLY done by checking
@@ -734,7 +751,46 @@ __declspec(dllexport) void game_render(
         }
         else
         {
-            game_state->player_velocity = (vector2_t){0.0f, 0.0f};
+            // If player has collided with tilemap, the player velocity gets
+            // reflected around the wall normal.
+
+            vector2_t wall_normal = {};
+            if (GET_TILE_INDEX(
+                    player_position_that_collided_with_tilemap.tile_index_y) <
+                GET_TILE_INDEX(game_state->player_world_position.tile_index_y))
+            {
+                wall_normal.y = -1.0f;
+            }
+            if (GET_TILE_INDEX(
+                    player_position_that_collided_with_tilemap.tile_index_y) >
+                GET_TILE_INDEX(game_state->player_world_position.tile_index_y))
+            {
+                wall_normal.y = 1.0f;
+            }
+            if (GET_TILE_INDEX(
+                    player_position_that_collided_with_tilemap.tile_index_x) >
+                GET_TILE_INDEX(game_state->player_world_position.tile_index_x))
+            {
+                wall_normal.x = 1.0f;
+            }
+            if (GET_TILE_INDEX(
+                    player_position_that_collided_with_tilemap.tile_index_x) <
+                GET_TILE_INDEX(game_state->player_world_position.tile_index_x))
+            {
+                wall_normal.x = -1.0f;
+            }
+
+            vector2_t input_vector_to_wall_projection = vector2_scalar_multiply(
+                wall_normal,
+                vector2_dot(wall_normal, game_state->player_velocity));
+
+            vector2_t wall_projection_into_2 =
+                vector2_scalar_multiply(input_vector_to_wall_projection, 2.0f);
+
+            game_state->player_velocity = vector2_scalar_multiply(
+                vector2_subtract(game_state->player_velocity,
+                                 wall_projection_into_2),
+                2.0f);
         }
     }
 
@@ -890,8 +946,7 @@ __declspec(dllexport) void game_render(
 
     player_bottom_left.y = player_position.tile_relative_offset.y +
                            GET_TILE_INDEX(player_position.tile_index_y) *
-                               game_world->tile_dimensions.height -
-                           player_sprite_height;
+                               game_world->tile_dimensions.height;
 
     draw_texture(
         &game_state->player_texture, game_framebuffer,

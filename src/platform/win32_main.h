@@ -8,8 +8,6 @@
 
 #include "../game.h"
 
-// NOTE: The biHeight parameter in bitmap_info_header is negative (so
-// that the top left corner is the origin).
 typedef struct
 {
     BITMAPINFOHEADER bitmap_info_header;
