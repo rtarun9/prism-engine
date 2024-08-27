@@ -9,6 +9,7 @@
 #include "arena_allocator.h"
 #include "custom_math.h"
 
+// NOTE: The bottom left corner is 0, 0.
 typedef struct
 {
     u8 *backbuffer_memory;
@@ -16,8 +17,6 @@ typedef struct
     u32 height;
 } game_framebuffer_t;
 
-// NOTE: State changed is used to determine if the state of the key
-// press has changed since last frame.
 typedef struct
 {
     b32 state_changed;
@@ -43,12 +42,10 @@ typedef struct
 {
     u64 permanent_memory_size;
     u8 *permanent_memory;
-} game_memory_allocator_t;
+} game_memory_t;
 
-// Note : In the tile 'chunk' dimension, y increases as you go down.
-// However, within a tile chunk, y increases as you go up.
-// TODO: Think whether tile chunks should also start at the bottom left instead
-// of top left?
+// The upper 8 bits of tile index are reserved for the tile index, the other 24
+// bits are reserved for chunk index.
 #define GET_TILE_INDEX(x) (((x) >> 24))
 #define GET_TILE_CHUNK_INDEX(x) (((x) & 0x00ffffff))
 
@@ -56,8 +53,8 @@ typedef struct
 #define SET_TILE_INDEX(x, y) (((x) & 0x00ffffff | (y) << 24))
 #define SET_TILE_CHUNK_INDEX(x, y) (((x) & 0xff000000 | (y) & 0x00ffffff))
 
-#define NUMBER_OF_TILES_PER_CHUNK_X 19
-#define NUMBER_OF_TILES_PER_CHUNK_Y 19
+#define NUMBER_OF_TILES_PER_CHUNK_X 15
+#define NUMBER_OF_TILES_PER_CHUNK_Y 11
 
 #define NUMBER_OF_CHUNKS_IN_WORLD_X 4
 #define NUMBER_OF_CHUNKS_IN_WORLD_Y 4
@@ -82,11 +79,9 @@ typedef struct
     u32 *tile_chunk;
 } game_tile_chunk_t;
 
-// NOTE: Game state will be stored *in* the permanent section of game memory.
 typedef struct
 {
-    // Dimensions of each tile in the tile chunk.
-    vector2_t tile_dimensions;
+    f32 tile_dimension;
 
     game_tile_chunk_t *tile_chunks;
 } game_world_t;
@@ -114,7 +109,7 @@ typedef struct
     f32 pixels_to_meters;
     vector2_t player_velocity;
 
-    game_world_t *game_world;
+    game_world_t game_world;
     arena_allocator_t memory_arena;
 
     game_texture_t test_texture;
@@ -157,13 +152,13 @@ typedef struct
     platform_write_to_file_t *platform_write_to_file;
 } platform_services_t;
 
-#define FUNC_GAME_RENDER(name)                                                 \
-    void name(game_memory_allocator_t *restrict game_memory_allocator,         \
+#define FUNC_GAME_UPDATE_AND_RENDER(name)                                      \
+    void name(game_memory_t *restrict game_memory_allocator,                   \
               game_framebuffer_t *restrict game_framebuffer,                   \
               game_input_t *restrict game_input,                               \
               platform_services_t *restrict platform_services)
 
 // Core game functions that will be called by the platform layer.
-__declspec(dllexport) FUNC_GAME_RENDER(game_render);
+__declspec(dllexport) FUNC_GAME_UPDATE_AND_RENDER(game_update_and_render);
 
 #endif

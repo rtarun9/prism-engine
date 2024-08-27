@@ -199,7 +199,7 @@ internal void platform_write_to_file(const char *restrict file_path,
     CloseHandle(file_handle);
 }
 
-internal FUNC_GAME_RENDER(stub_game_render)
+internal FUNC_GAME_UPDATE_AND_RENDER(stub_game_update_and_render)
 {
     return;
 }
@@ -214,15 +214,16 @@ internal game_code_t win32_load_game_dll(const char *file_path)
     // the duplicate DLL in LoadLibrary.
 
     game_code_t game_code = {0};
-    game_code.game_render = stub_game_render;
+    game_code.game_update_and_render = stub_game_update_and_render;
 
     if (CopyFile(file_path, "game_duplicate.dll", FALSE))
     {
         game_code.game_dll_module = LoadLibraryA("game_duplicate.dll");
         if (game_code.game_dll_module)
         {
-            game_code.game_render = (game_render_t *)GetProcAddress(
-                game_code.game_dll_module, "game_render");
+            game_code.game_update_and_render =
+                (game_update_and_render_t *)GetProcAddress(
+                    game_code.game_dll_module, "game_update_and_render");
         }
         else
         {
@@ -244,7 +245,7 @@ internal void win32_unload_game_dll(game_code_t *game_code)
     {
         FreeLibrary(game_code->game_dll_module);
         game_code->game_dll_module = NULL;
-        game_code->game_render = stub_game_render;
+        game_code->game_update_and_render = stub_game_update_and_render;
     }
 }
 
@@ -442,11 +443,11 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
     u64 end_timestamp_counter = __rdtsc();
 
     // Allocate memory upfront.
-    win32_memory_allocator_t memory_allocator = {0};
-    memory_allocator.permanent_memory_size =
+    win32_memory_t allocated_memory = {0};
+    allocated_memory.permanent_memory_size =
         get_nearest_multiple(MEGABYTE(1), win32_minimum_large_page_size);
-    memory_allocator.permanent_memory = VirtualAlloc(
-        NULL, memory_allocator.permanent_memory_size,
+    allocated_memory.permanent_memory = VirtualAlloc(
+        NULL, allocated_memory.permanent_memory_size,
         MEM_COMMIT | MEM_RESERVE | MEM_LARGE_PAGES, PAGE_READWRITE);
     DWORD error = GetLastError();
     if (error == 1450)
@@ -457,7 +458,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
                     "ERROR", MB_OK);
     }
 
-    ASSERT(memory_allocator.permanent_memory != NULL);
+    ASSERT(allocated_memory.permanent_memory != NULL);
 
     // Some explanation for the input module :
     // To determine if a key state has changed, the platform layer will
@@ -475,9 +476,9 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
     win32_state_t win32_state = {0};
     win32_state.current_state = WIN32_STATE_NONE;
     win32_state.game_memory = VirtualAlloc(
-        NULL, memory_allocator.permanent_memory_size,
+        NULL, allocated_memory.permanent_memory_size,
         MEM_COMMIT | MEM_RESERVE | MEM_LARGE_PAGES, PAGE_READWRITE);
-    win32_state.game_memory_size = memory_allocator.permanent_memory_size;
+    win32_state.game_memory_size = allocated_memory.permanent_memory_size;
 
     // Find the ms it takes to update the backbuffer.
     // NOTE: This will wary each time the window is resized!!!
@@ -590,11 +591,10 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
         game_framebuffer.height =
             g_offscreen_framebuffer.bitmap_info_header.biHeight;
 
-        game_memory_allocator_t game_memory_allocator = {0};
-        game_memory_allocator.permanent_memory_size =
-            memory_allocator.permanent_memory_size;
-        game_memory_allocator.permanent_memory =
-            memory_allocator.permanent_memory;
+        game_memory_t game_memory = {0};
+        game_memory.permanent_memory_size =
+            allocated_memory.permanent_memory_size;
+        game_memory.permanent_memory = allocated_memory.permanent_memory;
 
         // If the R key (for record) is pressed, recording starts.
         if (r_key_state.is_key_down && r_key_state.state_changed)
@@ -603,8 +603,8 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
             {
                 win32_state.current_state = WIN32_STATE_RECORDING;
 
-                win32_start_state_recording(
-                    &win32_state, game_memory_allocator.permanent_memory);
+                win32_start_state_recording(&win32_state,
+                                            game_memory.permanent_memory);
             }
             else if (win32_state.current_state == WIN32_STATE_RECORDING)
             {
@@ -626,10 +626,10 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
         else if (win32_state.current_state == WIN32_STATE_PLAYBACK)
         {
             win32_start_playback(&win32_state, &game_input,
-                                 memory_allocator.permanent_memory);
+                                 allocated_memory.permanent_memory);
         }
-        game_code.game_render(&game_memory_allocator, &game_framebuffer,
-                              &game_input, &platform_services);
+        game_code.game_update_and_render(&game_memory, &game_framebuffer,
+                                         &game_input, &platform_services);
 
         win32_dimensions_t new_client_dimensions =
             win32_get_client_region_dimensions(window_handle);
@@ -723,7 +723,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
     }
 
     ReleaseDC(window_handle, window_device_context);
-    VirtualFree(memory_allocator.permanent_memory, 0, MEM_RELEASE);
+    VirtualFree(allocated_memory.permanent_memory, 0, MEM_RELEASE);
 
     return 0;
 }

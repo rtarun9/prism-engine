@@ -3,6 +3,9 @@
 
 #include "common.h"
 
+#define MIN(a, b) ((a < b ? a : b))
+#define MAX(a, b) ((a > b ? a : b))
+
 #pragma warning(push)
 #pragma warning(disable : 4201)
 typedef struct
@@ -56,6 +59,17 @@ inline vector2_t vector2_scalar_multiply(const vector2_t a, const f32 scalar)
 inline f32 vector2_dot(const vector2_t a, const vector2_t b)
 {
     return a.x * b.x + a.y * b.y;
+}
+
+inline f32 vector2_len(const vector2_t a)
+{
+    return vector2_dot(a, a);
+}
+
+// TODO: Remove usage of math.h functions.
+inline f32 vector2_len_sq(const vector2_t a)
+{
+    return (f32)sqrt(vector2_len(a));
 }
 
 #endif

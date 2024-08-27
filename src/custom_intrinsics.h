@@ -47,7 +47,7 @@ inline u32 get_index_of_lsb_set(const u32 value)
         return 0;
     }
 #elif defined(COMPILER_LLVM)
-#error LLVM support has not been addedy yet!!
+#error LLVM support has not been added yet!!
 #else
 #error "This code is for reference only. Control flow should not reach here!!"
     {

@@ -25,17 +25,20 @@ typedef struct
     u8 key_states[256];
 } win32_keyboard_state_t;
 
-// To minimize memory allocators, memory is allocated upfront.
+// All memory required by the game and platform (in the future*) will be
+// obtained from win32_memory_t, which contains a single pointer that points to
+// memory allocated upfront. No more allocations will be done by the game (in
+// future***)
 typedef struct
 {
     u64 permanent_memory_size;
     u8 *permanent_memory;
-} win32_memory_allocator_t;
+} win32_memory_t;
 
 // NOTE: As the game code will be present in a DLL and will be loaded at run
 // time, the game func pointers (and DLL handle) will be encapsulated in its own
 // struct.
-typedef FUNC_GAME_RENDER(game_render_t);
+typedef FUNC_GAME_UPDATE_AND_RENDER(game_update_and_render_t);
 
 // NOTE: Each frame the platform layer will ccheck if the last modification time
 // has changed. If yes, the DLL is re-loaded.
@@ -43,7 +46,7 @@ typedef struct
 {
     HMODULE game_dll_module;
     FILETIME dll_last_modification_time;
-    game_render_t *game_render;
+    game_update_and_render_t *game_update_and_render;
 } game_code_t;
 
 // NOTE: To support loop recording, the following info is required:

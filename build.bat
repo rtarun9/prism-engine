@@ -24,6 +24,7 @@ pushd build
 del *.pdb
 del *.raddbg
 del *.sta
+del *.rdi
 
 cl /TC /Fe"main.exe" /DPRISM_DEBUG=1 /MTd /nologo /WX /W4 /wd4100 /wd4189 /wd4702 /Od /Oi /Z7 /std:c17  ../src/platform/win32_main.c /link /SUBSYSTEM:windows user32.lib gdi32.lib Winmm.lib Advapi32.lib
 
