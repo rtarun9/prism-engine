@@ -6,6 +6,8 @@
 #include "custom_intrinsics.h"
 #include "custom_math.h"
 
+global_variable game_counter_t *global_game_counters = NULL;
+
 // NOTE: This function takes as input the bottom left coords and width and
 // height.
 internal void draw_rectangle(game_framebuffer_t *game_framebuffer,
@@ -337,6 +339,8 @@ internal game_world_position_t
 get_world_position(game_world_t *world, vector2_t tile_relative_offset,
                    i32 tile_indices_x, i32 tile_indices_y)
 {
+    BEGIN_GAME_COUNTER(game_get_world_position);
+
     game_world_position_t result = {0};
     result.tile_index_x = 0;
     result.tile_index_y = 0;
@@ -376,6 +380,8 @@ get_world_position(game_world_t *world, vector2_t tile_relative_offset,
 
     result.tile_index_y = SET_TILE_CHUNK_INDEX(result.tile_index_y,
                                                corrected_tile_indices.chunk_y);
+
+    END_GAME_COUNTER(game_get_world_position);
 
     return result;
 }
@@ -514,6 +520,7 @@ __declspec(dllexport) void game_update_and_render(
     game_input_t *restrict game_input,
     platform_services_t *restrict platform_services)
 {
+
     ASSERT(game_input != NULL);
     ASSERT(game_framebuffer->backbuffer_memory != NULL);
     ASSERT(game_memory_allocator->permanent_memory != NULL);
@@ -523,6 +530,13 @@ __declspec(dllexport) void game_update_and_render(
 
     game_state_t *game_state =
         (game_state_t *)(game_memory_allocator->permanent_memory);
+
+#ifdef PRISM_INTERNAL
+    global_game_counters = game_state->game_counters;
+#endif
+
+    CLEAR_GAME_COUNTERS();
+    BEGIN_GAME_COUNTER(game_update_and_render_counter);
 
     if (!game_state->is_initialized)
     {
@@ -956,4 +970,6 @@ __declspec(dllexport) void game_update_and_render(
     draw_texture(
         &game_state->player_texture, game_framebuffer,
         vector2_add(tile_map_rendering_bottom_left_offset, player_bottom_left));
+
+    END_GAME_COUNTER(game_update_and_render_counter);
 }

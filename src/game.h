@@ -103,6 +103,48 @@ typedef struct
 
 typedef struct
 {
+    i64 cycles;
+    u64 hit_count;
+} game_counter_t;
+
+typedef enum
+{
+    game_update_and_render_counter,
+    game_get_world_position,
+    game_total_counters
+} game_counter_types_t;
+
+// #def's for perf counters.
+#ifdef PRISM_INTERNAL
+
+#ifdef COMPILER_MSVC
+#define BEGIN_GAME_COUNTER(id) i64 counter_##id = __rdtsc();
+
+#define END_GAME_COUNTER(id)                                                   \
+    global_game_counters[id].cycles = __rdtsc() - counter_##id;                \
+    global_game_counters[id].hit_count++;
+
+#define CLEAR_GAME_COUNTERS()                                                  \
+    for (i32 i = 0; i < game_total_counters; i++)                              \
+    {                                                                          \
+        global_game_counters[i].hit_count = 0;                                 \
+        global_game_counters[i].cycles = 0;                                    \
+    }
+
+#else
+#error "Compilers other than MSVC have not been setup and configured!!!"
+#endif
+
+#else
+#define BEGIN_GAME_COUNTER(id)
+#define END_GAME_COUNTER(id)
+#define CLEAR_GAME_COUNTERS()                                                  \
+    {                                                                          \
+    }
+#endif
+
+typedef struct
+{
     game_world_position_t player_world_position;
     game_world_position_t camera_world_position;
 
@@ -114,6 +156,8 @@ typedef struct
 
     game_texture_t test_texture;
     game_texture_t player_texture;
+
+    game_counter_t game_counters[game_total_counters];
 
     u32 is_initialized;
 } game_state_t;

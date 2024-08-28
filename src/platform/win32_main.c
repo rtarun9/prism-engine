@@ -377,6 +377,30 @@ internal SIZE_T win32_setup_large_pages_and_get_minimum_lage_page_size()
     return GetLargePageMinimum();
 }
 
+internal void win32_display_game_counters(game_memory_t *game_memory)
+{
+    game_counter_t *game_counters =
+        ((game_state_t *)game_memory->permanent_memory)->game_counters;
+
+    for (i32 i = 0; i < game_total_counters; i++)
+    {
+        game_counter_t counter = game_counters[i];
+
+        if (counter.hit_count > 0)
+        {
+            char buffer[256];
+            sprintf_s(
+                &buffer[0], 256,
+                "Token ID : %d Cycles Per Hit %I64d Hit Count : %I64u Total "
+                "Cycles : %I64d \n",
+                i, counter.cycles / counter.hit_count, counter.hit_count,
+                counter.cycles);
+
+            OutputDebugStringA(buffer);
+        }
+    }
+}
+
 int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
                    LPSTR command_line, int show_command)
 {
@@ -630,6 +654,8 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
         }
         game_code.game_update_and_render(&game_memory, &game_framebuffer,
                                          &game_input, &platform_services);
+
+        win32_display_game_counters(&game_memory);
 
         win32_dimensions_t new_client_dimensions =
             win32_get_client_region_dimensions(window_handle);
