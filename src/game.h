@@ -8,14 +8,8 @@
 
 #include "arena_allocator.h"
 #include "custom_math.h"
-
-// NOTE: The bottom left corner is 0, 0.
-typedef struct
-{
-    u8 *backbuffer_memory;
-    u32 width;
-    u32 height;
-} game_framebuffer_t;
+#include "renderer.h"
+#include "tile_map.h"
 
 typedef struct
 {
@@ -44,62 +38,52 @@ typedef struct
     u8 *permanent_memory;
 } game_memory_t;
 
-// The upper 8 bits of tile index are reserved for the tile index, the other 24
-// bits are reserved for chunk index.
-#define GET_TILE_INDEX(x) (((x) >> 24))
-#define GET_TILE_CHUNK_INDEX(x) (((x) & 0x00ffffff))
+// NOTE: There are 2 'types' of entites in the game, based on how frequently
+// they update. high_freq_entities are those that are update as frequently as
+// possible. The player and entites around the player fall into this category.
+// low_freq_entities are those that are not updated as frequently as player.
+// high freq entities are in a different coordinate system (float coord system),
+// where the camera center is origin.
+// low freq entites are in tile map coord system.
+// Note that even if a entity is high freq, it can still get some of its data
+// (like width and height that is common for all entity types) from the low freq
+// entity struct.
 
-// X is the tile_index_A, and y is the value.
-#define SET_TILE_INDEX(x, y) (((x) & 0x00ffffff | (y) << 24))
-#define SET_TILE_CHUNK_INDEX(x, y) (((x) & 0xff000000 | (y) & 0x00ffffff))
+#define MAX_NUMBER_OF_ENTITIES 512
 
-#define NUMBER_OF_TILES_PER_CHUNK_X 15
-#define NUMBER_OF_TILES_PER_CHUNK_Y 11
-
-#define NUMBER_OF_CHUNKS_IN_WORLD_X 4
-#define NUMBER_OF_CHUNKS_IN_WORLD_Y 4
-
-#define CHUNK_NOT_LOADED (u32)(-1)
-#define TILE_WALL 1
-#define TILE_EMPTY 0
+typedef enum
+{
+    game_entity_does_not_exist,
+    game_entity_low_freq,
+    game_entity_high_freq,
+} game_entity_states_t;
 
 typedef struct
 {
-    // The fp offset within a tile.
-    vector2_t tile_relative_offset;
-
-    // The 8 MSB bits are the index of tile within tile chunk.
-    // The other 24 bits are the index of the tile chunk within the world.
-    u32 tile_index_x;
-    u32 tile_index_y;
-} game_world_position_t;
+    vector2_t position;
+} game_high_freq_entity_t;
 
 typedef struct
 {
-    u32 *tile_chunk;
-} game_tile_chunk_t;
+    game_tile_map_position_t tile_map_position;
+    vector2_t dimensions;
+} game_low_freq_entity_t;
+
+typedef struct
+{
+    game_low_freq_entity_t *low_freq_entity;
+    game_high_freq_entity_t *high_freq_entity;
+} game_entity_t;
 
 typedef struct
 {
     f32 tile_dimension;
-
     game_tile_chunk_t *tile_chunks;
+
+    game_entity_states_t entity_states[MAX_NUMBER_OF_ENTITIES];
+    game_high_freq_entity_t high_freq_entities[MAX_NUMBER_OF_ENTITIES];
+    game_low_freq_entity_t low_freq_entities[MAX_NUMBER_OF_ENTITIES];
 } game_world_t;
-
-typedef struct
-{
-    // Given a pixel color, use the following shift values using (pixel >>
-    // shift) & 0xff to extract individual channel values.
-    u32 red_shift;
-    u32 green_shift;
-    u32 blue_shift;
-    u32 alpha_shift;
-
-    u32 height;
-    u32 width;
-
-    u32 *pointer;
-} game_texture_t;
 
 typedef struct
 {
@@ -145,8 +129,8 @@ typedef enum
 
 typedef struct
 {
-    game_world_position_t player_world_position;
-    game_world_position_t camera_world_position;
+    u32 player_entity_index;
+    game_tile_map_position_t camera_world_position;
 
     f32 pixels_to_meters;
     vector2_t player_velocity;
