@@ -138,7 +138,6 @@ typedef struct
     game_world_t game_world;
     arena_allocator_t memory_arena;
 
-    game_texture_t test_texture;
     game_texture_t player_texture;
 
     game_counter_t game_counters[game_total_counters];

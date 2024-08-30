@@ -13,32 +13,14 @@ global_variable game_counter_t *global_game_counters = NULL;
 #include "tile_map.c"
 #include "tile_map.h"
 
-
 internal game_entity_t get_entity(game_state_t *game_state, u32 index)
 {
     game_entity_t entity = {0};
+
     entity.low_freq_entity = &game_state->game_world.low_freq_entities[index];
     entity.high_freq_entity = &game_state->game_world.high_freq_entities[index];
 
     return entity;
-}
-
-// Returns 1 if collision has occured, and 0 if it did not.
-internal b32 check_point_and_tile_chunk_collision(
-    game_world_t *const world, game_tile_map_position_t position)
-{
-    ASSERT(world);
-
-    i32 chunk_x = GET_TILE_CHUNK_INDEX(position.tile_index_x);
-    i32 chunk_y = GET_TILE_CHUNK_INDEX(position.tile_index_y);
-
-    i32 tile_x = GET_TILE_INDEX(position.tile_index_x);
-    i32 tile_y = GET_TILE_INDEX(position.tile_index_y);
-
-    corrected_tile_indices_t tile_indices =
-        get_corrected_tile_indices(tile_x, tile_y, chunk_x, chunk_y);
-
-    return get_value_of_tile_in_chunks(world->tile_chunks, tile_indices);
 }
 
 // Ref for understanding the BMP file format :
@@ -107,7 +89,7 @@ game_texture_t load_texture(platform_services_t *restrict platform_services,
         }
     }
 
-    game_texture_t texture;
+    game_texture_t texture = {0};
     texture.red_shift = get_index_of_lsb_set(bmp_header->color_mask_r);
     texture.blue_shift = get_index_of_lsb_set(bmp_header->color_mask_b);
     texture.green_shift = get_index_of_lsb_set(bmp_header->color_mask_g);
@@ -121,34 +103,6 @@ game_texture_t load_texture(platform_services_t *restrict platform_services,
     platform_services->platform_close_file(bmp_read_result.file_content_buffer);
 
     return texture;
-}
-
-typedef struct
-{
-    i32 tile_x_diff;
-    i32 tile_y_diff;
-    i32 chunk_x_diff;
-    i32 chunk_y_diff;
-} game_tile_map_position_difference_t;
-
-// Computes a - b.
-game_tile_map_position_difference_t tile_map_position_difference(
-    game_tile_map_position_t *restrict a, game_tile_map_position_t *restrict b)
-{
-    game_tile_map_position_difference_t result = {0};
-
-    result.tile_x_diff =
-        GET_TILE_INDEX(a->tile_index_x) - GET_TILE_INDEX(b->tile_index_x);
-    result.tile_y_diff =
-        GET_TILE_INDEX(a->tile_index_y) - GET_TILE_INDEX(b->tile_index_y);
-
-    result.chunk_x_diff = GET_TILE_CHUNK_INDEX(a->tile_index_x) -
-                          GET_TILE_CHUNK_INDEX(b->tile_index_x);
-
-    result.chunk_y_diff = GET_TILE_CHUNK_INDEX(a->tile_index_y) -
-                          GET_TILE_CHUNK_INDEX(b->tile_index_y);
-
-    return result;
 }
 
 __declspec(dllexport) void game_update_and_render(
@@ -177,10 +131,6 @@ __declspec(dllexport) void game_update_and_render(
 
     if (!game_state->is_initialized)
     {
-        // For now, it is assumed that a single meter equals 1/xth of the
-        // framebuffer width.
-        game_state->pixels_to_meters = game_framebuffer->width / 20.0f;
-
         // Initialize memory arena.
         arena_init(&game_state->memory_arena,
                    game_memory_allocator->permanent_memory +
@@ -188,7 +138,11 @@ __declspec(dllexport) void game_update_and_render(
                    game_memory_allocator->permanent_memory_size -
                        sizeof(game_state_t));
 
-        game_state->game_world.tile_dimension = game_state->pixels_to_meters;
+        // For now, it is assumed that a single meter equals 1/xth of the
+        // framebuffer width.
+        game_state->pixels_to_meters = game_framebuffer->width / 20.0f;
+        game_state->game_world.tile_dimension =
+            1.0f * game_state->pixels_to_meters;
 
         // The tile chunks for the world is pre-allocated. HOWEVER, the tile
         // array inside of the tile chunks are sparsely loaded.
@@ -264,10 +218,6 @@ __declspec(dllexport) void game_update_and_render(
 
         game_state->player_texture = load_texture(
             platform_services, "../assets/player_sprite.bmp", game_state);
-
-        game_state->test_texture =
-            load_texture(platform_services,
-                         "../assets/kenny_colored_tilemap.bmp", game_state);
 
         game_entity_t player_entity =
             get_entity(game_state, game_state->player_entity_index);
@@ -494,7 +444,7 @@ __declspec(dllexport) void game_update_and_render(
 
     game_tile_map_position_difference_t player_and_camera_difference =
         tile_map_position_difference(&player_position,
-                            &game_state->camera_world_position);
+                                     &game_state->camera_world_position);
 
     if (player_and_camera_difference.chunk_x_diff != 0 ||
         player_and_camera_difference.chunk_y_diff != 0)
@@ -577,8 +527,8 @@ __declspec(dllexport) void game_update_and_render(
                 GET_TILE_CHUNK_INDEX(
                     game_state->camera_world_position.tile_index_y));
 
-            u32 tile_value =
-                get_value_of_tile_in_chunks(game_world.tile_chunks, tile_indices);
+            u32 tile_value = get_value_of_tile_in_chunks(game_world.tile_chunks,
+                                                         tile_indices);
 
             const vector2_t tile_dimension_vector = (vector2_t){
                 game_world.tile_dimension, game_world.tile_dimension};
@@ -601,10 +551,6 @@ __declspec(dllexport) void game_update_and_render(
             }
         }
     }
-
-    draw_texture(&game_state->test_texture, game_framebuffer,
-                 (vector2_t){(f32)game_framebuffer->width,
-                             game_framebuffer->height / 2.0f});
 
     vector2_t player_bottom_left = {0};
     player_bottom_left.x = player_position.tile_relative_offset.x +

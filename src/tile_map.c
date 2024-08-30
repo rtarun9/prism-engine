@@ -208,3 +208,41 @@ internal game_tile_map_position_t get_game_tile_map_position(
 
     return result;
 }
+
+// Computes a - b.
+game_tile_map_position_difference_t tile_map_position_difference(
+    game_tile_map_position_t *restrict a, game_tile_map_position_t *restrict b)
+{
+    game_tile_map_position_difference_t result = {0};
+
+    result.tile_x_diff =
+        GET_TILE_INDEX(a->tile_index_x) - GET_TILE_INDEX(b->tile_index_x);
+    result.tile_y_diff =
+        GET_TILE_INDEX(a->tile_index_y) - GET_TILE_INDEX(b->tile_index_y);
+
+    result.chunk_x_diff = GET_TILE_CHUNK_INDEX(a->tile_index_x) -
+                          GET_TILE_CHUNK_INDEX(b->tile_index_x);
+
+    result.chunk_y_diff = GET_TILE_CHUNK_INDEX(a->tile_index_y) -
+                          GET_TILE_CHUNK_INDEX(b->tile_index_y);
+
+    return result;
+}
+
+// Returns 1 if collision has occured, and 0 if it did not.
+internal b32 check_point_and_tile_chunk_collision(
+    game_world_t *const world, game_tile_map_position_t position)
+{
+    ASSERT(world);
+
+    i32 chunk_x = GET_TILE_CHUNK_INDEX(position.tile_index_x);
+    i32 chunk_y = GET_TILE_CHUNK_INDEX(position.tile_index_y);
+
+    i32 tile_x = GET_TILE_INDEX(position.tile_index_x);
+    i32 tile_y = GET_TILE_INDEX(position.tile_index_y);
+
+    corrected_tile_indices_t tile_indices =
+        get_corrected_tile_indices(tile_x, tile_y, chunk_x, chunk_y);
+
+    return get_value_of_tile_in_chunks(world->tile_chunks, tile_indices);
+}

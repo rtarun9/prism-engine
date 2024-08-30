@@ -38,4 +38,12 @@ typedef struct
 {
     u32 *tile_chunk;
 } game_tile_chunk_t;
+
+typedef struct
+{
+    i32 tile_x_diff;
+    i32 tile_y_diff;
+    i32 chunk_x_diff;
+    i32 chunk_y_diff;
+} game_tile_map_position_difference_t;
 #endif

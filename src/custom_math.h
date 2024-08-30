@@ -67,10 +67,9 @@ inline f32 vector2_len(const vector2_t a)
     return vector2_dot(a, a);
 }
 
-// TODO: Remove usage of math.h functions.
 inline f32 vector2_len_sq(const vector2_t a)
 {
-    return (f32)sqrt(vector2_len(a));
+    return (f32)square_root(vector2_len(a));
 }
 
 #endif
