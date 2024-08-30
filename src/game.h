@@ -37,29 +37,27 @@ typedef struct
     u8 *permanent_memory;
 } game_memory_t;
 
-// NOTE: Chunks in the world have indices that range from [-CHUNKS_EXTENT_X,
-// CHUNKS_EXTENT_X].
-#define CHUNKS_EXTENT_IN_WORLD_X 1
-#define CHUNKS_EXTENT_IN_WORLD_Y 1
+// NOTE: The chunks have a range of -2^53 to 2^53. There is no explicit 'checks'
+// done for chunk index. Instead, if the player approaches these chunk
+// coordinates a wall will be place so user cannot go out of bounds. However, it
+// is probably not possible that the user will ever reach this chunk from the
+// origin.
+#define CHUNKS_EXTENT_IN_WORLD_X (1 << 53)
+#define CHUNKS_EXTENT_IN_WORLD_Y (1 << 53)
 
 // All chunks share the same dimension in terms of meters.
 // The center of a chunk is 0, 0, and extents within a chunk go from
 // [-CHUNK_DIMENSION_IN_METERS_X, CHUNK_DIMENSION_IN_METERS_x], etc.
-#define CHUNK_DIMENSION_IN_METERS_X 17
-#define CHUNK_DIMENSION_IN_METERS_Y 13
+#define CHUNK_DIMENSION_IN_METERS_X (17 * 2)
+#define CHUNK_DIMENSION_IN_METERS_Y (13 * 2)
 
-// NOTE: position is relative to the center of tile chunk, where the camera will
-// most likely be situated. Chunk's follow the normal coordinate system, where X
-// increases right and Y increases as you go up. Note that while chunks_index
-// has the word index in it, it is a integer value that can be negative!!
-// This is to be used for the 'center' of entites.
+// TODO: This is subject to change, which is why is why game_position_t is not
+// just a typedef for v2f64_t.
 typedef struct
 {
-    // The fp offset relative to the center of tile chunk.
-    vector2_t chunk_relative_position;
-
-    i32 chunk_index_x;
-    i32 chunk_index_y;
+    // Chunk index can be easily obtained from position and the chunk
+    // dimensions.
+    v2f64_t position;
 } game_position_t;
 
 // NOTE: There are 2 'types' of entites in the game, based on how frequently
@@ -85,7 +83,7 @@ typedef enum
 typedef struct
 {
     game_position_t position;
-    vector2_t dimension;
+    v2f32_t dimension;
 } game_entity_t;
 
 typedef struct
@@ -145,7 +143,7 @@ typedef struct
 {
 
     f32 pixels_to_meters;
-    vector2_t player_velocity;
+    v2f32_t player_velocity;
 
     game_world_t game_world;
     arena_allocator_t memory_arena;

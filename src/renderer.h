@@ -28,8 +28,8 @@ typedef struct
 
 // NOTE: The offsets are framebuffer relative!!
 internal void draw_rectangle(game_framebuffer_t *game_framebuffer,
-                             vector2_t bottom_left_offset,
-                             vector2_t width_and_height, f32 normalized_red,
+                             v2f32_t bottom_left_offset,
+                             v2f32_t width_and_height, f32 normalized_red,
                              f32 normalized_green, f32 normalized_blue)
 {
     ASSERT(game_framebuffer);
@@ -92,7 +92,7 @@ internal void draw_rectangle(game_framebuffer_t *game_framebuffer,
 
 internal void draw_texture(game_texture_t *restrict texture,
                            game_framebuffer_t *restrict framebuffer,
-                           vector2_t bottom_left_offset)
+                           v2f32_t bottom_left_offset)
 {
     i32 min_x = round_f32_to_i32(bottom_left_offset.x);
     i32 min_y = round_f32_to_i32(bottom_left_offset.y);

@@ -41,11 +41,20 @@ inline i32 floor_f32_to_i32(const f32 value)
     return (i32)floor_f32(value);
 }
 
-inline f32 square_root(const f32 value)
+inline f32 square_root_f32(const f32 value)
 {
     __m128 sq_root_value = _mm_sqrt_ps(_mm_set_ps1(value));
-    float result = 0.0f;
+    f32 result = 0.0f;
     _mm_store_ps1(&result, sq_root_value);
+
+    return result;
+}
+
+inline f64 square_root_f64(const f64 value)
+{
+    __m128d sq_root_value = _mm_sqrt_pd(_mm_set_pd1(value));
+    f64 result = 0.0f;
+    _mm_store_pd1(&result, sq_root_value);
 
     return result;
 }

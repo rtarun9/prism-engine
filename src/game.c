@@ -10,25 +10,11 @@ global_variable game_counter_t *global_game_counters = NULL;
 
 #include "renderer.h"
 
-game_position_t game_position_difference(game_position_t *restrict a,
-                                         game_position_t *restrict b)
-{
-    game_position_t result = {0};
-
-    result.chunk_index_x = a->chunk_index_x - b->chunk_index_x;
-    result.chunk_index_y = a->chunk_index_y - b->chunk_index_y;
-
-    result.chunk_relative_position = vector2_subtract(
-        a->chunk_relative_position, b->chunk_relative_position);
-
-    return result;
-}
-
 internal game_entity_t *create_entity(game_world_t *game_world,
                                       game_entity_state_t entity_state,
                                       game_entity_type_t entity_type,
                                       game_position_t position,
-                                      vector2_t dimension)
+                                      v2f32_t dimension)
 {
     ASSERT(game_world->index_of_last_created_entity < MAX_NUMBER_OF_ENTITIES);
 
@@ -171,48 +157,33 @@ __declspec(dllexport) void game_update_and_render(
         // framebuffer width.
         game_state->pixels_to_meters = game_framebuffer->width / 20.0f;
 
-        game_state->game_world.camera_world_position.chunk_index_x = 0;
-        game_state->game_world.camera_world_position.chunk_index_y = 0;
-        game_state->game_world.camera_world_position.chunk_relative_position =
-            (vector2_t){0.0f, 0.0f};
+        game_state->game_world.camera_world_position.position =
+            (v2f64_t){0.0f, 0.0f};
 
         // Setup a basic tile chunk.
-        for (i32 chunk_y = -CHUNKS_EXTENT_IN_WORLD_Y;
-             chunk_y <= CHUNKS_EXTENT_IN_WORLD_Y; chunk_y++)
+        for (i32 tile_y = -CHUNK_DIMENSION_IN_METERS_Y;
+             tile_y <= CHUNK_DIMENSION_IN_METERS_Y; tile_y++)
         {
-            for (i32 chunk_x = -CHUNKS_EXTENT_IN_WORLD_X;
-                 chunk_x <= CHUNKS_EXTENT_IN_WORLD_X; chunk_x++)
+            if (tile_y == CHUNK_DIMENSION_IN_METERS_Y / 2)
             {
-                for (i32 tile_y = -CHUNK_DIMENSION_IN_METERS_Y;
-                     tile_y <= CHUNK_DIMENSION_IN_METERS_Y; tile_y++)
-                {
-
-                    if (tile_y == CHUNK_DIMENSION_IN_METERS_Y / 2)
-                    {
-                        continue;
-                    }
-
-                    game_position_t position = {0};
-                    position.chunk_index_x = chunk_x;
-                    position.chunk_index_y = chunk_y;
-
-                    position.chunk_relative_position =
-                        (vector2_t){0.0f, (f32)tile_y};
-
-                    create_entity(&game_state->game_world,
-                                  game_entity_state_high_freq,
-                                  game_entity_type_wall, position,
-                                  (vector2_t){1.0f, 1.0f});
-
-                    position.chunk_relative_position = (vector2_t){
-                        (f32)(CHUNK_DIMENSION_IN_METERS_X - 1), (f32)tile_y};
-
-                    create_entity(&game_state->game_world,
-                                  game_entity_state_high_freq,
-                                  game_entity_type_wall, position,
-                                  (vector2_t){1.0f, 1.0f});
-                }
+                continue;
             }
+
+            game_position_t position = {0};
+
+            position.position =
+                (v2f64_t){-CHUNK_DIMENSION_IN_METERS_X / 2.0f, (f32)tile_y};
+
+            create_entity(&game_state->game_world, game_entity_state_high_freq,
+                          game_entity_type_wall, position,
+                          (v2f32_t){1.0f, 1.0f});
+
+            position.position = (v2f64_t){
+                (f32)(CHUNK_DIMENSION_IN_METERS_X / 2.0f), (f32)tile_y};
+
+            create_entity(&game_state->game_world, game_entity_state_high_freq,
+                          game_entity_type_wall, position,
+                          (v2f32_t){1.0f, 1.0f});
         }
 
         game_state->player_texture =
@@ -220,14 +191,13 @@ __declspec(dllexport) void game_update_and_render(
                          &game_state->memory_arena);
 
         game_position_t player_position = {0};
-        player_position.chunk_index_x = 0;
-        player_position.chunk_index_y = 0;
-        player_position.chunk_relative_position = (vector2_t){0, 0};
+        player_position.position =
+            (v2f64_t){-CHUNK_DIMENSION_IN_METERS_X / 2.0f, 0};
 
         create_entity(&game_state->game_world, game_entity_state_high_freq,
                       game_entity_type_player, player_position,
-                      (vector2_t){(f32)game_state->player_texture.width,
-                                  (f32)game_state->player_texture.height});
+                      (v2f32_t){(f32)game_state->player_texture.width,
+                                (f32)game_state->player_texture.height});
 
         game_state->game_world.player_entity_index =
             game_state->game_world.index_of_last_created_entity;
@@ -242,9 +212,9 @@ __declspec(dllexport) void game_update_and_render(
     // Acceleration is instantaneous.
     // Integrating over the delta time, velocity becomes (previous velocity) + a
     // * dt. Then, position = vt + 1/2 at^2.
-    f32 player_movement_speed = game_input->dt_for_frame * 16000.0f;
+    f32 player_movement_speed = game_input->dt_for_frame * 1600.0f;
 
-    vector2_t player_acceleration = {0};
+    v2f32_t player_acceleration = {0};
 
     player_acceleration.x =
         (game_input->keyboard_state.key_a.is_key_down ? -1.0f : 0.0f);
@@ -261,144 +231,63 @@ __declspec(dllexport) void game_update_and_render(
     {
         // 1.0f / sqrt(2) = 0.70710.
         player_acceleration =
-            vector2_scalar_multiply(player_acceleration, 0.70710f);
+            v2f32_scalar_multiply(player_acceleration, 0.70710f);
     }
 
     player_acceleration =
-        vector2_scalar_multiply(player_acceleration, player_movement_speed);
+        v2f32_scalar_multiply(player_acceleration, player_movement_speed);
 
     // Faking friction :)
-    player_acceleration = vector2_subtract(
+    player_acceleration = v2f32_subtract(
         player_acceleration,
-        vector2_scalar_multiply(game_state->player_velocity, 2.5f));
+        v2f32_scalar_multiply(game_state->player_velocity, 2.5f));
 
-    vector2_t player_velocity = vector2_add(
+    game_state->player_velocity 
+    = v2f32_add(
         game_state->player_velocity,
-        vector2_scalar_multiply(player_acceleration, game_input->dt_for_frame));
+        v2f32_scalar_multiply(player_acceleration, game_input->dt_for_frame));
 
-    vector2_t player_new_chunk_relative_position = vector2_add(
-        vector2_scalar_multiply(player_velocity, game_input->dt_for_frame),
-        vector2_scalar_multiply(player_acceleration,
-                                0.5f * game_input->dt_for_frame *
-                                    game_input->dt_for_frame));
 
-    game_state->player_velocity = player_velocity;
+    v2f64_t player_new_position = convert_to_v2f64(v2f32_add(
+        v2f32_scalar_multiply(game_state->player_velocity, game_input->dt_for_frame),
+        v2f32_scalar_multiply(player_acceleration,
+                              0.5f * game_input->dt_for_frame *
+                                  game_input->dt_for_frame)));
+
 
     game_entity_t *player_entity = get_entity(
         &game_state->game_world, game_state->game_world.player_entity_index);
-    game_position_t player_position = player_entity->position;
 
-    player_new_chunk_relative_position =
-        vector2_add(player_new_chunk_relative_position,
-                    player_position.chunk_relative_position);
+    player_new_position =
+        v2f64_add(player_new_position, player_entity->position.position);
 
-    /*
-    game_tile_map_position_t current_player_position = player_world_position;
-
-    game_tile_map_position_t new_player_position = get_game_tile_map_position(
-        game_world.tile_dimension, player_new_tile_relative_position,
-        player_world_position.tile_index_x, player_world_position.tile_index_y);
-
-    game_tile_map_position_t player_right = get_game_tile_map_position(
-        game_world.tile_dimension,
-        vector2_add(player_new_tile_relative_position,
-                    (vector2_t){player_sprite_width * 0.5f, 0.0f}),
-        current_player_position.tile_index_x,
-        current_player_position.tile_index_y);
-
-    game_tile_map_position_t player_left = get_game_tile_map_position(
-        game_world.tile_dimension,
-        vector2_add(player_new_tile_relative_position,
-                    (vector2_t){-player_sprite_width * 0.5f, 0.0f}),
-        current_player_position.tile_index_x,
-        current_player_position.tile_index_y);
-
-    game_tile_map_position_t player_position_that_collided_with_tilemap = {};
     b32 player_collided = 0;
 
-    if (check_point_and_tile_chunk_collision(&game_world, new_player_position))
+    for (u32 entity_index = 0; entity_index < MAX_NUMBER_OF_ENTITIES;
+         entity_index++)
     {
-        player_position_that_collided_with_tilemap = new_player_position;
-        player_collided = 1;
-    }
-
-    if (check_point_and_tile_chunk_collision(&game_world, player_right))
-    {
-        player_position_that_collided_with_tilemap = player_right;
-        player_collided = 1;
-    }
-
-    if (check_point_and_tile_chunk_collision(&game_world, player_left))
-    {
-        player_position_that_collided_with_tilemap = player_left;
-        player_collided = 1;
-    }
-
-    {
-        // NOTE: Assumes that if a chunk is not loaded in a certain place, it is
-        // out of bounds.
-        if (!player_collided)
+        if (entity_index == game_world->player_entity_index)
         {
-            // Player can move to new position!!! Check for change in
-            // current tilemap. Note that this is ONLY done by checking
-            // the players position (i.e
-            // player_position_collision_check). This should make the
-            // code simpler as well.
-            player_entity.low_freq_entity->tile_map_position =
-                new_player_position;
+            continue;
         }
-        else
+
+        // Perform simple AABB collision.
+        typedef struct
         {
-            // If player has collided with tilemap, the player velocity gets
-            // reflected around the wall normal.
+            f32 bottom_left;
+            f32 bottom_right;
+            f32 top_left;
+            f32 top_right;
+        } rectangle_t;
 
-            vector2_t wall_normal = {};
-            if (GET_TILE_INDEX(
-                    player_position_that_collided_with_tilemap.tile_index_y) <
-                GET_TILE_INDEX(player_world_position.tile_index_y))
-            {
-                wall_normal.y = -1.0f;
-            }
-            if (GET_TILE_INDEX(
-                    player_position_that_collided_with_tilemap.tile_index_y) >
-                GET_TILE_INDEX(player_world_position.tile_index_y))
-            {
-                wall_normal.y = 1.0f;
-            }
-            if (GET_TILE_INDEX(
-                    player_position_that_collided_with_tilemap.tile_index_x) >
-                GET_TILE_INDEX(player_world_position.tile_index_x))
-            {
-                wall_normal.x = 1.0f;
-            }
-            if (GET_TILE_INDEX(
-                    player_position_that_collided_with_tilemap.tile_index_x) <
-                GET_TILE_INDEX(player_world_position.tile_index_x))
-            {
-                wall_normal.x = -1.0f;
-            }
-
-            vector2_t input_vector_to_wall_projection = vector2_scalar_multiply(
-                wall_normal,
-                vector2_dot(wall_normal, game_state->player_velocity));
-
-            vector2_t wall_projection_into_2 =
-                vector2_scalar_multiply(input_vector_to_wall_projection, 2.0f);
-
-            game_state->player_velocity = vector2_scalar_multiply(
-                vector2_subtract(game_state->player_velocity,
-                                 wall_projection_into_2),
-                0.9f);
-        }
+        rectangle_t player_rect = {0};
     }
-    */
 
-    player_entity->position.chunk_relative_position =
-        player_new_chunk_relative_position;
+    player_entity->position.position = player_new_position;
 
     // Clear screen.
-    draw_rectangle(game_framebuffer, (vector2_t){0.0f, 0.0f},
-                   (vector2_t){(f32)game_framebuffer->width,
+    draw_rectangle(game_framebuffer, (v2f32_t){0.0f, 0.0f},
+                   (v2f32_t){(f32)game_framebuffer->width,
                                (f32)game_framebuffer->height},
                    1.0f, 1.0f, 1.0f);
 
@@ -544,43 +433,56 @@ __declspec(dllexport) void game_update_and_render(
         game_entity_t *entity =
             get_entity(&game_state->game_world, entity_index);
 
+        v2f32_t entity_position_v2f32  = convert_to_v2f32(entity->position.position);
+
         if (game_state->game_world.entity_type[entity_index] ==
             game_entity_type_player)
         {
-            vector2_t player_bottom_left = {0};
+            v2f32_t player_bottom_left = {0};
 
-            game_position_t player_entity_position = entity->position;
+            entity_position_v2f32 =
+                v2f32_scalar_multiply(
+                    entity_position_v2f32,
+                    game_state->pixels_to_meters);
 
-            player_bottom_left.x =
-                player_entity_position.chunk_relative_position.x -
-                0.5f * entity->dimension.width;
+            player_bottom_left.x =entity_position_v2f32.x + 
+                0.5f * entity->dimension.width +
+                (f32)game_world->camera_world_position.position.x +
+                (game_framebuffer->width / 2.0f);
 
             player_bottom_left.y =
-                player_entity_position.chunk_relative_position.y;
+                entity_position_v2f32.y +
+                (f32)game_world->camera_world_position.position.y +
+                (game_framebuffer->height / 2.0f);
 
             draw_texture(&game_state->player_texture, game_framebuffer,
                          player_bottom_left);
         }
-#if 0
         else if (game_state->game_world.entity_type[entity_index] ==
                  game_entity_type_wall)
         {
-            const vector2_t tile_dimension_vector = (vector2_t){1.0f, 1.0f};
+            const v2f32_t wall_dimension_vector =
+                (v2f32_t){1.0f * game_state->pixels_to_meters,
+                            1.0f * game_state->pixels_to_meters};
 
-            game_position_t wall_position =
-                entity.low_freq_entity->tile_map_position;
+            entity_position_v2f32 =
+                v2f32_scalar_multiply(entity_position_v2f32,
+                                        game_state->pixels_to_meters);
 
-            vector2_t bottom_left = vector2_add(
-                tile_map_rendering_bottom_left_offset,
-                (vector2_t){game_world.tile_dimension *
-                                GET_TILE_INDEX(wall_position.tile_index_x),
-                            GET_TILE_INDEX(wall_position.tile_index_y) *
-                                game_world.tile_dimension});
+            v2f32_t wall_bottom_left = entity_position_v2f32;
+            wall_bottom_left.x +=
+                (f32)game_world->camera_world_position.position.x -
+                wall_dimension_vector.x / 2.0f +
+                (game_framebuffer->width / 2.0f);
 
-            draw_rectangle(game_framebuffer, bottom_left, tile_dimension_vector,
-                           0.4f, 0.1f, 0.4f);
+            wall_bottom_left.y +=
+                (f32)game_world->camera_world_position.position.y -
+                wall_dimension_vector.y / 2.0f +
+                (game_framebuffer->height / 2.0f);
+
+            draw_rectangle(game_framebuffer, wall_bottom_left,
+                           wall_dimension_vector, 0.4f, 0.1f, 0.4f);
         }
-#endif
     }
 
     END_GAME_COUNTER(game_update_and_render_counter);
