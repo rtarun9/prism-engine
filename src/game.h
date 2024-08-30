@@ -53,6 +53,12 @@ typedef struct
 
 typedef enum
 {
+    game_entity_type_wall,
+    game_entity_type_player,
+} game_entity_type_t;
+
+typedef enum
+{
     game_entity_does_not_exist,
     game_entity_low_freq,
     game_entity_high_freq,
@@ -83,6 +89,12 @@ typedef struct
     game_entity_states_t entity_states[MAX_NUMBER_OF_ENTITIES];
     game_high_freq_entity_t high_freq_entities[MAX_NUMBER_OF_ENTITIES];
     game_low_freq_entity_t low_freq_entities[MAX_NUMBER_OF_ENTITIES];
+    game_entity_type_t entity_type[MAX_NUMBER_OF_ENTITIES];
+
+    u32 index_of_last_created_entity;
+
+    u32 player_entity_index;
+    game_tile_map_position_t camera_world_position;
 } game_world_t;
 
 typedef struct
@@ -129,8 +141,6 @@ typedef enum
 
 typedef struct
 {
-    u32 player_entity_index;
-    game_tile_map_position_t camera_world_position;
 
     f32 pixels_to_meters;
     vector2_t player_velocity;

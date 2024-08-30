@@ -1,8 +1,8 @@
 #ifndef __TILE_MAP_H__
 #define __TILE_MAP_H__
 
-#include "custom_math.h"
 #include "custom_intrinsics.h"
+#include "custom_math.h"
 
 // The upper 8 bits of tile index are reserved for the tile index, the other 24
 // bits are reserved for chunk index.
@@ -12,6 +12,9 @@
 // X is the tile_index_A, and y is the value.
 #define SET_TILE_INDEX(x, y) (((x) & 0x00ffffff | (y) << 24))
 #define SET_TILE_CHUNK_INDEX(x, y) (((x) & 0xff000000 | (y) & 0x00ffffff))
+
+#define SET_TILE_AND_CHUNK_INDEX(x, y)                                         \
+    (SET_TILE_INDEX(0, x) | SET_TILE_CHUNK_INDEX(0, y))
 
 #define NUMBER_OF_TILES_PER_CHUNK_X 15
 #define NUMBER_OF_TILES_PER_CHUNK_Y 11

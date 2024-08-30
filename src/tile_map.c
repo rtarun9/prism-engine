@@ -135,8 +135,8 @@ get_value_of_tile_in_chunks(game_tile_chunk_t *restrict tile_chunks,
 
     game_tile_chunk_t *tile_chunk =
         &tile_chunks[tile_indices.chunk_x +
-                    (NUMBER_OF_CHUNKS_IN_WORLD_Y - 1 - tile_indices.chunk_y) *
-                        NUMBER_OF_CHUNKS_IN_WORLD_X];
+                     (NUMBER_OF_CHUNKS_IN_WORLD_Y - 1 - tile_indices.chunk_y) *
+                         NUMBER_OF_CHUNKS_IN_WORLD_X];
 
     ASSERT(tile_chunk);
 
@@ -154,15 +154,15 @@ internal game_tile_chunk_t *get_tile_chunk(
 
     game_tile_chunk_t *tile_chunk =
         &tile_chunks[x + (NUMBER_OF_CHUNKS_IN_WORLD_Y - 1 - y) *
-                            NUMBER_OF_CHUNKS_IN_WORLD_X];
+                             NUMBER_OF_CHUNKS_IN_WORLD_X];
 
     return tile_chunk;
 }
 
-internal game_tile_map_position_t get_game_tile_map_position(
-    f32 tile_dimension, vector2_t tile_relative_offset,
+internal game_tile_map_position_t
+get_game_tile_map_position(f32 tile_dimension, vector2_t tile_relative_offset,
 
-    i32 tile_indices_x, i32 tile_indices_y)
+                           i32 tile_indices_x, i32 tile_indices_y)
 {
     BEGIN_GAME_COUNTER(game_get_world_position);
 

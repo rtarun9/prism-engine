@@ -13,6 +13,112 @@ global_variable game_counter_t *global_game_counters = NULL;
 #include "tile_map.c"
 #include "tile_map.h"
 
+// From camera relative coordinates, get the tile map coordinates (that are
+// required for rendering!!)
+game_tile_map_position_t get_tile_map_position_from_camera_tile_map_position(
+    game_tile_map_position_t camera_tile_map_position, vector2_t position,
+    f32 tile_dimension)
+{
+    game_tile_map_position_t result = {0};
+
+    i32 tile_x = floor_f32_to_i32(position.x / tile_dimension);
+    f32 tile_relative_offset_x = position.x - tile_x * tile_dimension;
+
+    tile_x += GET_TILE_INDEX(camera_tile_map_position.tile_index_x);
+
+    i32 tile_y = floor_f32_to_i32(position.y / tile_dimension);
+    f32 tile_relative_offset_y = position.y - tile_y * tile_dimension;
+
+    tile_y += GET_TILE_INDEX(camera_tile_map_position.tile_index_y);
+
+    i32 camera_chunk_index_x =
+        GET_TILE_CHUNK_INDEX(camera_tile_map_position.tile_index_x);
+
+    i32 camera_chunk_index_y =
+        GET_TILE_CHUNK_INDEX(camera_tile_map_position.tile_index_y);
+
+    return get_game_tile_map_position(
+        tile_dimension,
+        (vector2_t){tile_relative_offset_x, tile_relative_offset_y},
+        SET_TILE_AND_CHUNK_INDEX(tile_x, camera_chunk_index_x),
+        SET_TILE_AND_CHUNK_INDEX(tile_y, camera_chunk_index_y));
+}
+
+internal game_entity_t create_entity_with_tile_map_position(
+    game_world_t *game_world, game_entity_states_t entity_state,
+    game_entity_type_t entity_type, game_tile_map_position_t position,
+    vector2_t dimension)
+{
+    ASSERT(game_world->index_of_last_created_entity < MAX_NUMBER_OF_ENTITIES);
+
+    u32 entity_index = ++game_world->index_of_last_created_entity;
+    game_world->entity_states[entity_index] = entity_state;
+
+    game_world->high_freq_entities[entity_index].position =
+        (vector2_t){0.0f, 0.0f};
+
+    game_world->low_freq_entities[entity_index].tile_map_position = position;
+    game_world->low_freq_entities[entity_index].dimensions = dimension;
+
+    game_world->entity_type[entity_index] = entity_type;
+
+    game_entity_t entity = {0};
+    entity.high_freq_entity = &game_world->high_freq_entities[entity_index];
+    entity.low_freq_entity = &game_world->low_freq_entities[entity_index];
+
+    return entity;
+}
+
+internal game_entity_t create_entity(game_world_t *game_world,
+                                     game_entity_states_t entity_state,
+                                     game_entity_type_t entity_type,
+                                     vector2_t position, vector2_t dimension)
+{
+    ASSERT(game_world->index_of_last_created_entity < MAX_NUMBER_OF_ENTITIES);
+
+    u32 entity_index = ++game_world->index_of_last_created_entity;
+    game_world->entity_states[entity_index] = entity_state;
+
+    game_world->high_freq_entities[entity_index].position = position;
+
+    game_world->low_freq_entities[entity_index].tile_map_position =
+        get_tile_map_position_from_camera_tile_map_position(
+            game_world->camera_world_position, position,
+            game_world->tile_dimension);
+
+    game_world->low_freq_entities[entity_index].dimensions = dimension;
+
+    game_world->entity_type[entity_index] = entity_type;
+
+    game_entity_t entity = {0};
+    entity.high_freq_entity = &game_world->high_freq_entities[entity_index];
+    entity.low_freq_entity = &game_world->low_freq_entities[entity_index];
+
+    return entity;
+}
+
+internal void add_wall_to_tile_map_and_entity(game_world_t *game_world,
+                                              game_tile_chunk_t *tile_chunk,
+                                              i32 tile_x, i32 tile_y,
+                                              i32 chunk_x, i32 chunk_y)
+
+{
+    set_value_in_tile_chunk(tile_chunk, tile_x, tile_y, TILE_WALL);
+
+    game_tile_map_position_t wall_tile_map_position = {0};
+    wall_tile_map_position.tile_index_x =
+        SET_TILE_AND_CHUNK_INDEX(tile_x, chunk_x);
+
+    wall_tile_map_position.tile_index_y =
+        SET_TILE_AND_CHUNK_INDEX(tile_y, chunk_y);
+
+    create_entity_with_tile_map_position(
+        game_world, game_entity_high_freq, game_entity_type_wall,
+        wall_tile_map_position,
+        (vector2_t){(f32)game_world->tile_dimension,
+                    (f32)game_world->tile_dimension});
+}
+
 internal game_entity_t get_entity(game_state_t *game_state, u32 index)
 {
     game_entity_t entity = {0};
@@ -111,7 +217,6 @@ __declspec(dllexport) void game_update_and_render(
     game_input_t *restrict game_input,
     platform_services_t *restrict platform_services)
 {
-
     ASSERT(game_input != NULL);
     ASSERT(game_framebuffer->backbuffer_memory != NULL);
     ASSERT(game_memory_allocator->permanent_memory != NULL);
@@ -152,6 +257,14 @@ __declspec(dllexport) void game_update_and_render(
                 NUMBER_OF_CHUNKS_IN_WORLD_X * NUMBER_OF_CHUNKS_IN_WORLD_Y,
                 sizeof(game_tile_chunk_t), DEFAULT_ALIGNMENT_VALUE);
 
+        // The camera should be in the same tile chunk as player, but the
+        // tile index should be in the middle of the chunk. Tile relative x
+        // and y should be zero.
+        game_state->game_world.camera_world_position.tile_index_x =
+            SET_TILE_INDEX(0, NUMBER_OF_TILES_PER_CHUNK_X / 2);
+        game_state->game_world.camera_world_position.tile_index_y =
+            SET_TILE_INDEX(0, NUMBER_OF_TILES_PER_CHUNK_Y / 2);
+
         // Setup a basic tile chunk.
         for (i32 chunk_y = 0; chunk_y < NUMBER_OF_CHUNKS_IN_WORLD_Y; chunk_y++)
         {
@@ -174,44 +287,43 @@ __declspec(dllexport) void game_update_and_render(
                          tile_y++)
                     {
 
-                        set_value_in_tile_chunk(basic_tile_chunk, 0, tile_y,
-                                                TILE_WALL);
-                        set_value_in_tile_chunk(basic_tile_chunk,
-                                                NUMBER_OF_TILES_PER_CHUNK_X - 1,
-                                                tile_y, TILE_WALL);
+                        if (tile_y == NUMBER_OF_TILES_PER_CHUNK_Y / 2)
+                        {
+                            continue;
+                        }
+
+                        add_wall_to_tile_map_and_entity(
+                            &game_state->game_world, basic_tile_chunk, 0,
+                            tile_y, chunk_x, chunk_y);
+
+                        add_wall_to_tile_map_and_entity(
+                            &game_state->game_world, basic_tile_chunk,
+                            NUMBER_OF_TILES_PER_CHUNK_X - 1, tile_y, chunk_x,
+                            chunk_y);
                     }
-
-                    set_value_in_tile_chunk(
-                        basic_tile_chunk, NUMBER_OF_TILES_PER_CHUNK_X - 1,
-                        NUMBER_OF_TILES_PER_CHUNK_Y / 2, TILE_EMPTY);
-
-                    set_value_in_tile_chunk(basic_tile_chunk, 0,
-                                            NUMBER_OF_TILES_PER_CHUNK_Y / 2,
-                                            TILE_EMPTY);
 
                     // Set the top and bottom border as obstacles.
                     for (i32 tile_x = 0; tile_x < NUMBER_OF_TILES_PER_CHUNK_X;
                          tile_x++)
                     {
-                        set_value_in_tile_chunk(basic_tile_chunk, tile_x, 0,
-                                                TILE_WALL);
+                        if (tile_x == NUMBER_OF_TILES_PER_CHUNK_X / 2)
+                        {
+                            continue;
+                        }
 
-                        set_value_in_tile_chunk(basic_tile_chunk, tile_x,
-                                                NUMBER_OF_TILES_PER_CHUNK_Y - 1,
-                                                TILE_WALL);
+                        add_wall_to_tile_map_and_entity(
+                            &game_state->game_world, basic_tile_chunk, tile_x,
+                            0, chunk_x, chunk_y);
+
+                        add_wall_to_tile_map_and_entity(
+                            &game_state->game_world, basic_tile_chunk, tile_x,
+                            NUMBER_OF_TILES_PER_CHUNK_Y - 1, chunk_x, chunk_y);
                     }
 
-                    set_value_in_tile_chunk(basic_tile_chunk,
-                                            NUMBER_OF_TILES_PER_CHUNK_X / 2, 0,
-                                            TILE_EMPTY);
-
-                    set_value_in_tile_chunk(
-                        basic_tile_chunk, NUMBER_OF_TILES_PER_CHUNK_X / 2,
-                        NUMBER_OF_TILES_PER_CHUNK_Y - 1, TILE_EMPTY);
-
-                    set_value_in_tile_chunk(
-                        basic_tile_chunk, NUMBER_OF_TILES_PER_CHUNK_X / 2,
-                        NUMBER_OF_TILES_PER_CHUNK_Y / 2, TILE_WALL);
+                    add_wall_to_tile_map_and_entity(
+                        &game_state->game_world, basic_tile_chunk,
+                        NUMBER_OF_TILES_PER_CHUNK_X / 2,
+                        NUMBER_OF_TILES_PER_CHUNK_Y / 2, chunk_x, chunk_y);
                 }
             }
         }
@@ -219,27 +331,15 @@ __declspec(dllexport) void game_update_and_render(
         game_state->player_texture = load_texture(
             platform_services, "../assets/player_sprite.bmp", game_state);
 
-        game_entity_t player_entity =
-            get_entity(game_state, game_state->player_entity_index);
+        create_entity(
+            &game_state->game_world, game_entity_high_freq,
+            game_entity_type_player,
+            (vector2_t){game_state->game_world.tile_dimension * 4, 0.0f},
+            (vector2_t){(f32)game_state->player_texture.width,
+                        (f32)game_state->player_texture.height});
 
-        player_entity.low_freq_entity->tile_map_position.tile_index_x =
-            SET_TILE_INDEX(0, 5);
-
-        player_entity.low_freq_entity->tile_map_position.tile_index_y =
-            SET_TILE_INDEX(0, 5);
-
-        player_entity.low_freq_entity->tile_map_position.tile_relative_offset
-            .x = 0.5f;
-        player_entity.low_freq_entity->tile_map_position.tile_relative_offset
-            .y = 0.5f;
-
-        // The camera should be in the same tile chunk as player, but the tile
-        // index should be in the middle of the chunk. Tile relative x and y
-        // should be zero.
-        game_state->camera_world_position.tile_index_x =
-            SET_TILE_INDEX(0, NUMBER_OF_TILES_PER_CHUNK_X / 2);
-        game_state->camera_world_position.tile_index_y =
-            SET_TILE_INDEX(0, NUMBER_OF_TILES_PER_CHUNK_Y / 2);
+        game_state->game_world.player_entity_index =
+            game_state->game_world.index_of_last_created_entity;
 
         game_state->is_initialized = 1;
     }
@@ -294,7 +394,7 @@ __declspec(dllexport) void game_update_and_render(
     game_state->player_velocity = player_velocity;
 
     game_entity_t player_entity =
-        get_entity(game_state, game_state->player_entity_index);
+        get_entity(game_state, game_state->game_world.player_entity_index);
     game_tile_map_position_t player_world_position =
         player_entity.low_freq_entity->tile_map_position;
 
@@ -432,33 +532,35 @@ __declspec(dllexport) void game_update_and_render(
     vector2_t tile_map_rendering_bottom_left_offset = {0};
     tile_map_rendering_bottom_left_offset.x =
         game_framebuffer->width / 2.0f -
-        GET_TILE_INDEX(game_state->camera_world_position.tile_index_x) *
+        GET_TILE_INDEX(
+            game_state->game_world.camera_world_position.tile_index_x) *
             game_world.tile_dimension -
         game_world.tile_dimension / 2.0f;
 
     tile_map_rendering_bottom_left_offset.y =
         game_framebuffer->height / 2.0f -
-        GET_TILE_INDEX(game_state->camera_world_position.tile_index_y) *
+        GET_TILE_INDEX(
+            game_state->game_world.camera_world_position.tile_index_y) *
             game_world.tile_dimension -
         game_world.tile_dimension / 2.0f;
 
     game_tile_map_position_difference_t player_and_camera_difference =
-        tile_map_position_difference(&player_position,
-                                     &game_state->camera_world_position);
+        tile_map_position_difference(
+            &player_position, &game_state->game_world.camera_world_position);
 
     if (player_and_camera_difference.chunk_x_diff != 0 ||
         player_and_camera_difference.chunk_y_diff != 0)
     {
         // Now, set the camera position to the same as player. Continue to move
         // the camera's position until the tile is the center of the chunk.
-        game_state->camera_world_position = player_position;
+        game_state->game_world.camera_world_position = player_position;
     }
 
     // check if camera tile is the center chunk.
-    u32 camera_tile_x =
-        GET_TILE_INDEX(game_state->camera_world_position.tile_index_x);
-    u32 camera_tile_y =
-        GET_TILE_INDEX(game_state->camera_world_position.tile_index_y);
+    u32 camera_tile_x = GET_TILE_INDEX(
+        game_state->game_world.camera_world_position.tile_index_x);
+    u32 camera_tile_y = GET_TILE_INDEX(
+        game_state->game_world.camera_world_position.tile_index_y);
 
     if (camera_tile_x != NUMBER_OF_TILES_PER_CHUNK_X / 2 ||
         camera_tile_y != NUMBER_OF_TILES_PER_CHUNK_Y / 2)
@@ -494,17 +596,22 @@ __declspec(dllexport) void game_update_and_render(
         }
 
         // Advance the camera tile by 1.
-        game_state->camera_world_position.tile_index_x = SET_TILE_INDEX(
-            game_state->camera_world_position.tile_index_x,
-            (GET_TILE_INDEX(game_state->camera_world_position.tile_index_x)) +
-                direction_to_move_camera_to_reach_chunk_center_x);
+        game_state->game_world.camera_world_position.tile_index_x =
+            SET_TILE_INDEX(
+                game_state->game_world.camera_world_position.tile_index_x,
+                (GET_TILE_INDEX(game_state->game_world.camera_world_position
+                                    .tile_index_x)) +
+                    direction_to_move_camera_to_reach_chunk_center_x);
 
-        game_state->camera_world_position.tile_index_y = SET_TILE_INDEX(
-            game_state->camera_world_position.tile_index_y,
-            (GET_TILE_INDEX(game_state->camera_world_position.tile_index_y)) +
-                direction_to_move_camera_to_reach_chunk_center_y);
+        game_state->game_world.camera_world_position.tile_index_y =
+            SET_TILE_INDEX(
+                game_state->game_world.camera_world_position.tile_index_y,
+                (GET_TILE_INDEX(game_state->game_world.camera_world_position
+                                    .tile_index_y)) +
+                    direction_to_move_camera_to_reach_chunk_center_y);
     }
 
+#if 0
     for (i32 _y = -tiles_viewed_y / 2; _y <= tiles_viewed_y / 2; ++_y)
     {
         for (i32 _x = -tiles_viewed_x / 2; _x <= tiles_viewed_x / 2; ++_x)
@@ -551,20 +658,57 @@ __declspec(dllexport) void game_update_and_render(
             }
         }
     }
+#endif
 
-    vector2_t player_bottom_left = {0};
-    player_bottom_left.x = player_position.tile_relative_offset.x +
-                           GET_TILE_INDEX(player_position.tile_index_x) *
-                               game_world.tile_dimension -
-                           0.5f * player_sprite_width;
+    // Render entites
+    for (u32 entity_index = 0; entity_index < MAX_NUMBER_OF_ENTITIES;
+         entity_index++)
+    {
+        game_entity_t entity = get_entity(game_state, entity_index);
 
-    player_bottom_left.y = player_position.tile_relative_offset.y +
-                           GET_TILE_INDEX(player_position.tile_index_y) *
-                               game_world.tile_dimension;
+        if (game_state->game_world.entity_type[entity_index] ==
+            game_entity_type_player)
+        {
+            vector2_t player_bottom_left = {0};
 
-    draw_texture(
-        &game_state->player_texture, game_framebuffer,
-        vector2_add(tile_map_rendering_bottom_left_offset, player_bottom_left));
+            game_tile_map_position_t player_entity_position =
+                entity.low_freq_entity->tile_map_position;
+
+            player_bottom_left.x =
+                player_entity_position.tile_relative_offset.x +
+                GET_TILE_INDEX(player_entity_position.tile_index_x) *
+                    game_world.tile_dimension -
+                0.5f * entity.low_freq_entity->dimensions.width;
+
+            player_bottom_left.y =
+                player_entity_position.tile_relative_offset.y +
+                GET_TILE_INDEX(player_entity_position.tile_index_y) *
+                    game_world.tile_dimension;
+
+            draw_texture(&game_state->player_texture, game_framebuffer,
+                         vector2_add(tile_map_rendering_bottom_left_offset,
+                                     player_bottom_left));
+        }
+        else if (game_state->game_world.entity_type[entity_index] ==
+                 game_entity_type_wall)
+        {
+            const vector2_t tile_dimension_vector = (vector2_t){
+                game_world.tile_dimension, game_world.tile_dimension};
+
+            game_tile_map_position_t wall_position =
+                entity.low_freq_entity->tile_map_position;
+
+            vector2_t bottom_left = vector2_add(
+                tile_map_rendering_bottom_left_offset,
+                (vector2_t){game_world.tile_dimension *
+                                GET_TILE_INDEX(wall_position.tile_index_x),
+                            GET_TILE_INDEX(wall_position.tile_index_y) *
+                                game_world.tile_dimension});
+
+            draw_rectangle(game_framebuffer, bottom_left, tile_dimension_vector,
+                           0.4f, 0.1f, 0.4f);
+        }
+    }
 
     END_GAME_COUNTER(game_update_and_render_counter);
 }
