@@ -9,7 +9,6 @@
 #include "arena_allocator.h"
 #include "custom_math.h"
 #include "renderer.h"
-#include "tile_map.h"
 
 typedef struct
 {
@@ -38,16 +37,35 @@ typedef struct
     u8 *permanent_memory;
 } game_memory_t;
 
+// NOTE: Chunks in the world have indices that range from [-CHUNKS_EXTENT_X,
+// CHUNKS_EXTENT_X].
+#define CHUNKS_EXTENT_IN_WORLD_X 1
+#define CHUNKS_EXTENT_IN_WORLD_Y 1
+
+// All chunks share the same dimension in terms of meters.
+// The center of a chunk is 0, 0, and extents within a chunk go from
+// [-CHUNK_DIMENSION_IN_METERS_X, CHUNK_DIMENSION_IN_METERS_x], etc.
+#define CHUNK_DIMENSION_IN_METERS_X 17
+#define CHUNK_DIMENSION_IN_METERS_Y 13
+
+// NOTE: position is relative to the center of tile chunk, where the camera will
+// most likely be situated. Chunk's follow the normal coordinate system, where X
+// increases right and Y increases as you go up. Note that while chunks_index
+// has the word index in it, it is a integer value that can be negative!!
+// This is to be used for the 'center' of entites.
+typedef struct
+{
+    // The fp offset relative to the center of tile chunk.
+    vector2_t chunk_relative_position;
+
+    i32 chunk_index_x;
+    i32 chunk_index_y;
+} game_position_t;
+
 // NOTE: There are 2 'types' of entites in the game, based on how frequently
 // they update. high_freq_entities are those that are update as frequently as
 // possible. The player and entites around the player fall into this category.
 // low_freq_entities are those that are not updated as frequently as player.
-// high freq entities are in a different coordinate system (float coord system),
-// where the camera center is origin.
-// low freq entites are in tile map coord system.
-// Note that even if a entity is high freq, it can still get some of its data
-// (like width and height that is common for all entity types) from the low freq
-// entity struct.
 
 #define MAX_NUMBER_OF_ENTITIES 512
 
@@ -59,42 +77,27 @@ typedef enum
 
 typedef enum
 {
-    game_entity_does_not_exist,
-    game_entity_low_freq,
-    game_entity_high_freq,
-} game_entity_states_t;
+    game_entity_state_does_not_exist,
+    game_entity_state_low_freq,
+    game_entity_state_high_freq,
+} game_entity_state_t;
 
 typedef struct
 {
-    vector2_t position;
-} game_high_freq_entity_t;
-
-typedef struct
-{
-    game_tile_map_position_t tile_map_position;
-    vector2_t dimensions;
-} game_low_freq_entity_t;
-
-typedef struct
-{
-    game_low_freq_entity_t *low_freq_entity;
-    game_high_freq_entity_t *high_freq_entity;
+    game_position_t position;
+    vector2_t dimension;
 } game_entity_t;
 
 typedef struct
 {
-    f32 tile_dimension;
-    game_tile_chunk_t *tile_chunks;
-
-    game_entity_states_t entity_states[MAX_NUMBER_OF_ENTITIES];
-    game_high_freq_entity_t high_freq_entities[MAX_NUMBER_OF_ENTITIES];
-    game_low_freq_entity_t low_freq_entities[MAX_NUMBER_OF_ENTITIES];
+    game_entity_state_t entity_states[MAX_NUMBER_OF_ENTITIES];
     game_entity_type_t entity_type[MAX_NUMBER_OF_ENTITIES];
+    game_entity_t entities[MAX_NUMBER_OF_ENTITIES];
 
     u32 index_of_last_created_entity;
-
     u32 player_entity_index;
-    game_tile_map_position_t camera_world_position;
+
+    game_position_t camera_world_position;
 } game_world_t;
 
 typedef struct
@@ -106,7 +109,6 @@ typedef struct
 typedef enum
 {
     game_update_and_render_counter,
-    game_get_world_position,
     game_total_counters
 } game_counter_types_t;
 

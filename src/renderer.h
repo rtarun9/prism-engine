@@ -26,6 +26,7 @@ typedef struct
     u32 *pointer;
 } game_texture_t;
 
+// NOTE: The offsets are framebuffer relative!!
 internal void draw_rectangle(game_framebuffer_t *game_framebuffer,
                              vector2_t bottom_left_offset,
                              vector2_t width_and_height, f32 normalized_red,
