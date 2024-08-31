@@ -156,7 +156,8 @@ __declspec(dllexport) void game_update_and_render(
         game_state->pixels_to_meters = game_framebuffer->width / 22.0f;
 
         game_state->game_world.camera_world_position.position =
-            (v2f64_t){0.0f, 0.0f};
+            (v2f64_t){CHUNK_DIMENSION_IN_METERS_X / 2.0f,
+                      CHUNK_DIMENSION_IN_METERS_Y / 2.0f};
 
         game_state->player_texture =
             load_texture(platform_services, "../assets/player_sprite.bmp",
@@ -164,7 +165,8 @@ __declspec(dllexport) void game_update_and_render(
 
         game_position_t player_position = {0};
         player_position.position =
-            (v2f64_t){-CHUNK_DIMENSION_IN_METERS_X / 4.0f, 0.0};
+            (v2f64_t){(f64)CHUNK_DIMENSION_IN_METERS_X / 4.0f,
+                      (f64)CHUNK_DIMENSION_IN_METERS_Y / 4.0f};
 
         create_entity(&game_state->game_world, game_entity_state_high_freq,
                       game_entity_type_player, player_position,
@@ -173,56 +175,72 @@ __declspec(dllexport) void game_update_and_render(
         game_state->game_world.player_entity_index =
             game_state->game_world.index_of_last_created_entity;
 
-        for (i32 tile_y = -CHUNK_DIMENSION_IN_METERS_Y / 2;
-             tile_y <= CHUNK_DIMENSION_IN_METERS_Y / 2; tile_y++)
+        // Create a few chunks for the player to roam in.
+        for (i32 chunk_y = -2; chunk_y <= 2; chunk_y++)
         {
-            if (tile_y == 0)
+            for (i32 chunk_x = -2; chunk_x <= 2; chunk_x++)
             {
-                continue;
+                v2f64_t chunk_relative_tile_entity_offset =
+                    (v2f64_t){(f64)chunk_x * CHUNK_DIMENSION_IN_METERS_X,
+                              (f64)chunk_y * CHUNK_DIMENSION_IN_METERS_Y};
+
+                for (i32 tile_y = 0; tile_y <= CHUNK_DIMENSION_IN_METERS_Y;
+                     tile_y++)
+                {
+                    if (tile_y == CHUNK_DIMENSION_IN_METERS_Y / 2)
+                    {
+                        continue;
+                    }
+
+                    game_position_t position = {0};
+
+                    position.position = (v2f64_t){(f64)0, (f64)tile_y};
+                    position.position = v2f64_add(
+                        position.position, chunk_relative_tile_entity_offset);
+
+                    create_entity(
+                        &game_state->game_world, game_entity_state_high_freq,
+                        game_entity_type_wall, position, (v2f32_t){1.0f, 1.0f});
+
+                    position.position = (v2f64_t){
+                        (f64)(CHUNK_DIMENSION_IN_METERS_X), (f64)tile_y};
+                    position.position = v2f64_add(
+                        position.position, chunk_relative_tile_entity_offset);
+
+                    create_entity(
+                        &game_state->game_world, game_entity_state_high_freq,
+                        game_entity_type_wall, position, (v2f32_t){1.0f, 1.0f});
+                }
+
+                // Set the top and bottom border as obstacles.
+                for (i32 tile_x = 0; tile_x <= CHUNK_DIMENSION_IN_METERS_X;
+                     tile_x++)
+                {
+                    if (tile_x == CHUNK_DIMENSION_IN_METERS_X / 2)
+                    {
+                        continue;
+                    }
+
+                    game_position_t position = {0};
+                    position.position = (v2f64_t){(f64)tile_x, 0};
+                    position.position = v2f64_add(
+                        position.position, chunk_relative_tile_entity_offset);
+
+                    create_entity(
+                        &game_state->game_world, game_entity_state_high_freq,
+                        game_entity_type_wall, position, (v2f32_t){1.0f, 1.0f});
+
+                    position.position = (v2f64_t){
+                        (f64)tile_x, (f64)CHUNK_DIMENSION_IN_METERS_Y};
+                    position.position = v2f64_add(
+                        position.position, chunk_relative_tile_entity_offset);
+
+                    create_entity(
+                        &game_state->game_world, game_entity_state_high_freq,
+                        game_entity_type_wall, position, (v2f32_t){1.0f, 1.0f});
+                }
             }
-
-            game_position_t position = {0};
-
-            position.position =
-                (v2f64_t){-CHUNK_DIMENSION_IN_METERS_X / 2.0f, (f64)tile_y};
-
-            create_entity(&game_state->game_world, game_entity_state_high_freq,
-                          game_entity_type_wall, position,
-                          (v2f32_t){1.0f, 1.0f});
-
-            position.position = (v2f64_t){
-                (f64)(CHUNK_DIMENSION_IN_METERS_X / 2.0f), (f64)tile_y};
-
-            create_entity(&game_state->game_world, game_entity_state_high_freq,
-                          game_entity_type_wall, position,
-                          (v2f32_t){1.0f, 1.0f});
         }
-
-        // Set the top and bottom border as obstacles.
-        for (i32 tile_x = -CHUNK_DIMENSION_IN_METERS_X / 2;
-             tile_x <= CHUNK_DIMENSION_IN_METERS_X / 2; tile_x++)
-        {
-            if (tile_x == 0)
-            {
-                continue;
-            }
-
-            game_position_t position = {0};
-            position.position =
-                (v2f64_t){(f64)tile_x, -CHUNK_DIMENSION_IN_METERS_Y / 2.0f};
-
-            create_entity(&game_state->game_world, game_entity_state_high_freq,
-                          game_entity_type_wall, position,
-                          (v2f32_t){1.0f, 1.0f});
-
-            position.position =
-                (v2f64_t){(f64)tile_x, (f64)CHUNK_DIMENSION_IN_METERS_Y / 2.0f};
-
-            create_entity(&game_state->game_world, game_entity_state_high_freq,
-                          game_entity_type_wall, position,
-                          (v2f32_t){1.0f, 1.0f});
-        }
-
         game_state->is_initialized = 1;
     }
 
@@ -403,30 +421,25 @@ __declspec(dllexport) void game_update_and_render(
     draw_rectangle(
         game_framebuffer, (v2f32_t){0.0f, 0.0f},
         (v2f32_t){(f32)game_framebuffer->width, (f32)game_framebuffer->height},
-        0.0f, 0.0f, 0.0f);
+        0.0f, 0.0f, 0.0f, 1.0f);
 
     // If the player moves out of the current chunk, perform a smooth scroll on
     // the camera until it reaches the center of the players new chunk.
-    i32 player_position_x_sign =
-        player_entity->position.position.x > 0 ? 1 : -1;
-    i32 player_position_y_sign =
-        player_entity->position.position.y > 0 ? 1 : -1;
+    i64 player_current_chunk_x =
+        floor_f64_to_i64((player_entity->position.position.x) /
+                         ((f64)CHUNK_DIMENSION_IN_METERS_X));
 
-    i64 player_current_chunk_x = truncate_f64_to_i64(
-        (player_entity->position.position.x +
-         player_position_x_sign * CHUNK_DIMENSION_IN_METERS_X / 2) /
-        ((f64)CHUNK_DIMENSION_IN_METERS_X));
-
-    i64 player_current_chunk_y = truncate_f64_to_i64(
-        (player_entity->position.position.y +
-         player_position_y_sign * CHUNK_DIMENSION_IN_METERS_Y / 2) /
-        (f64)(CHUNK_DIMENSION_IN_METERS_Y));
+    i64 player_current_chunk_y =
+        floor_f64_to_i64((player_entity->position.position.y) /
+                         (f64)(CHUNK_DIMENSION_IN_METERS_Y));
 
     f64 player_current_chunk_center_x =
-        (f64)(player_current_chunk_x * CHUNK_DIMENSION_IN_METERS_X);
+        (f64)(player_current_chunk_x * CHUNK_DIMENSION_IN_METERS_X +
+              0.5f * CHUNK_DIMENSION_IN_METERS_X);
 
     f64 player_current_chunk_center_y =
-        (f64)(player_current_chunk_y * CHUNK_DIMENSION_IN_METERS_Y);
+        (f64)(player_current_chunk_y * CHUNK_DIMENSION_IN_METERS_Y +
+              0.5f * CHUNK_DIMENSION_IN_METERS_Y);
 
     if (player_current_chunk_center_x !=
             game_world->camera_world_position.position.x ||
@@ -493,7 +506,7 @@ __declspec(dllexport) void game_update_and_render(
             draw_rectangle(game_framebuffer, rendering_offset,
                            v2f32_scalar_multiply(entity->dimension,
                                                  game_state->pixels_to_meters),
-                           1.0f, 1.0f, 1.0f);
+                           1.0f, 1.0f, 1.0f, 0.5f);
 
             // Player sprite position has to be such that the bottom middle of
             // the sprite coincides with the botom middle of player position.
@@ -517,7 +530,7 @@ __declspec(dllexport) void game_update_and_render(
             draw_rectangle(game_framebuffer, rendering_offset,
                            v2f32_scalar_multiply(entity->dimension,
                                                  game_state->pixels_to_meters),
-                           0.4f, 0.1f, 0.4f);
+                           0.4f, 0.1f, 0.4f, 0.5f);
         }
     }
 

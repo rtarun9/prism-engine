@@ -41,15 +41,14 @@ typedef struct
 // done for chunk index. Instead, if the player approaches these chunk
 // coordinates a wall will be place so user cannot go out of bounds. However, it
 // is probably not possible that the user will ever reach this chunk from the
-// origin.
+// origin. Or alternatively, no checks can be done and the player will just wrap
+// around the world, but this has to be checked.
 #define CHUNKS_EXTENT_IN_WORLD_X (1 << 53)
 #define CHUNKS_EXTENT_IN_WORLD_Y (1 << 53)
 
 // All chunks share the same dimension in terms of meters.
-// The center of a chunk is 0, 0, and extents within a chunk go from
-// [-CHUNK_DIMENSION_IN_METERS_X / 2, CHUNK_DIMENSION_IN_METERS_X / 2], etc.
-// TODO: Better name for this? Since the chunk can technically go from
-// -CHUNK_DIMENSION_... / 2 to the positive half.
+// The center of a chunk is CHUNK_DIMENSIONS_IN_METER_X / 2, Y/2,and extents
+// within a chunk go from [0, CHUNK_DIMENSION_IN_METERS_X], etc.
 #define CHUNK_DIMENSION_IN_METERS_X (17)
 #define CHUNK_DIMENSION_IN_METERS_Y (11)
 
@@ -67,7 +66,7 @@ typedef struct
 // possible. The player and entites around the player fall into this category.
 // low_freq_entities are those that are not updated as frequently as player.
 
-#define MAX_NUMBER_OF_ENTITIES 512
+#define MAX_NUMBER_OF_ENTITIES 1024 * 4
 
 typedef enum
 {

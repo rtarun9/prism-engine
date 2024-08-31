@@ -30,7 +30,8 @@ typedef struct
 internal void draw_rectangle(game_framebuffer_t *game_framebuffer,
                              v2f32_t bottom_left_offset,
                              v2f32_t width_and_height, f32 normalized_red,
-                             f32 normalized_green, f32 normalized_blue)
+                             f32 normalized_green, f32 normalized_blue,
+                             f32 normalized_alpha)
 {
     ASSERT(game_framebuffer);
 
@@ -40,6 +41,8 @@ internal void draw_rectangle(game_framebuffer_t *game_framebuffer,
     ASSERT(normalized_red >= 0.0f);
     ASSERT(normalized_green >= 0.0f);
     ASSERT(normalized_blue >= 0.0f);
+    ASSERT(normalized_alpha >= 0.0f);
+    ASSERT(normalized_alpha <= 1.0f);
 
     i32 min_x = round_f32_to_i32(bottom_left_offset.x);
     i32 min_y = round_f32_to_i32(bottom_left_offset.y);
@@ -72,19 +75,36 @@ internal void draw_rectangle(game_framebuffer_t *game_framebuffer,
 
     i32 pitch = game_framebuffer->width;
 
-    u32 red = round_f32_to_u32(normalized_red * 255.0f);
-    u32 green = round_f32_to_u32(normalized_green * 255.0f);
-    u32 blue = round_f32_to_u32(normalized_blue * 255.0f);
-
-    // Framebuffer format : xx RR GG BB
-    u32 pixel_color = blue | (green << 8) | (red << 16);
+    u8 src_red = (u8)round_f32_to_u32(normalized_red * 255.0f);
+    u8 src_green = (u8)round_f32_to_u32(normalized_green * 255.0f);
+    u8 src_blue = (u8)round_f32_to_u32(normalized_blue * 255.0f);
+    u8 src_alpha = (u8)round_f32_to_u32(normalized_alpha * 255.0f);
 
     for (i32 y = min_y; y <= max_y; y++)
     {
-        u32 *pixel = row;
+        u32 *destination = row;
         for (i32 x = min_x; x <= max_x; x++)
         {
-            *pixel++ = pixel_color;
+            u32 destination_color = *destination;
+
+            u8 dst_alpha = (u8)(destination_color >> 24);
+            u8 dst_red = (u8)(destination_color >> 16);
+            u8 dst_green = (u8)(destination_color >> 8);
+            u8 dst_blue = (u8)(destination_color);
+
+            f32 t = src_alpha / 255.0f;
+
+            u32 red = round_f32_to_u32(src_red * t + (1.0f - t) * dst_red);
+            u32 green =
+                round_f32_to_u32(src_green * t + (1.0f - t) * dst_green);
+            u32 blue = round_f32_to_u32(src_blue * t + (1.0f - t) * dst_blue);
+
+            u32 alpha =
+                round_f32_to_u32(src_alpha * t + (1.0f - t) * dst_alpha);
+
+            // Framebuffer format : xx RR GG BB
+            *(destination)++ =
+                blue | (green << 8) | (red << 16) | (alpha << 24);
         }
         row += pitch;
     }
@@ -174,6 +194,7 @@ internal void draw_texture(game_texture_t *restrict texture,
             // Framebuffer format : xx RR GG BB
             u32 destination_color = *destination;
 
+            u8 dst_alpha = (u8)(destination_color >> 24);
             u8 dst_red = (u8)(destination_color >> 16);
             u8 dst_green = (u8)(destination_color >> 8);
             u8 dst_blue = (u8)(destination_color);
@@ -185,8 +206,12 @@ internal void draw_texture(game_texture_t *restrict texture,
                 round_f32_to_u32(src_green * t + (1.0f - t) * dst_green);
             u32 blue = round_f32_to_u32(src_blue * t + (1.0f - t) * dst_blue);
 
+            u32 alpha =
+                round_f32_to_u32(src_alpha * t + (1.0f - t) * dst_alpha);
+
             // Framebuffer format : xx RR GG BB
-            *(destination)++ = blue | (green << 8) | (red << 16) | (255 << 24);
+            *(destination)++ =
+                blue | (green << 8) | (red << 16) | (alpha << 24);
         }
 
         destination_row += destination_pitch;
