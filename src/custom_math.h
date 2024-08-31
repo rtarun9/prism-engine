@@ -139,8 +139,8 @@ inline f64 v2f64_len_sq(const v2f64_t a)
 }
 
 inline v2f64_t convert_to_v2f64(const v2f32_t a)
-{ 
-    v2f64_t  result = {0};
+{
+    v2f64_t result = {0};
     result.x = (f64)(a.x);
     result.y = (f64)(a.y);
 
@@ -148,11 +148,35 @@ inline v2f64_t convert_to_v2f64(const v2f32_t a)
 }
 
 inline v2f32_t convert_to_v2f32(const v2f64_t a)
-{ 
-    v2f32_t  result = {0};
+{
+    v2f32_t result = {0};
     result.x = (f32)(a.x);
     result.y = (f32)(a.y);
 
     return result;
 }
+
+typedef struct
+{
+    f32 bottom_left_x;
+    f32 bottom_left_y;
+    f32 width;
+    f32 height;
+} rectangle_t;
+
+rectangle_t rectangle_from_center_and_origin(v2f32_t center, v2f32_t dimension)
+{
+    rectangle_t result = {0};
+
+    v2f32_t half_dimension = v2f32_scalar_multiply(dimension, 0.5f);
+
+    result.bottom_left_x = v2f32_subtract(center, half_dimension).x;
+    result.bottom_left_y = v2f32_subtract(center, half_dimension).y;
+
+    result.width = dimension.width;
+    result.height = dimension.height;
+
+    return result;
+}
+
 #endif

@@ -48,8 +48,8 @@ typedef struct
 // All chunks share the same dimension in terms of meters.
 // The center of a chunk is 0, 0, and extents within a chunk go from
 // [-CHUNK_DIMENSION_IN_METERS_X, CHUNK_DIMENSION_IN_METERS_x], etc.
-#define CHUNK_DIMENSION_IN_METERS_X (17 * 2)
-#define CHUNK_DIMENSION_IN_METERS_Y (13 * 2)
+#define CHUNK_DIMENSION_IN_METERS_X (17)
+#define CHUNK_DIMENSION_IN_METERS_Y (11)
 
 // TODO: This is subject to change, which is why is why game_position_t is not
 // just a typedef for v2f64_t.
@@ -69,6 +69,7 @@ typedef struct
 
 typedef enum
 {
+    game_entity_type_none,
     game_entity_type_wall,
     game_entity_type_player,
 } game_entity_type_t;
