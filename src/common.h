@@ -48,6 +48,9 @@ typedef double f64;
 #define GIGABYTE(x) (MEGABYTE(x) * 1024LL)
 #define TERABYTE(x) (GIGABYTE(x) * 1024LL)
 
+// #defines to get size of array.
+#define ARRAY_COUNT(x) ((sizeof(x) / sizeof(x[0])))
+
 // #defines that are related to assets.
 #ifdef PRISM_DEBUG
 #define ASSERT(x)                                                              \

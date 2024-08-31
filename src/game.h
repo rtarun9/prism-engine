@@ -48,7 +48,7 @@ typedef struct
 
 // All chunks share the same dimension in terms of meters.
 // The center of a chunk is CHUNK_DIMENSIONS_IN_METER_X / 2, Y/2,and extents
-// within a chunk go from [0, CHUNK_DIMENSION_IN_METERS_X], etc.
+// within a chunk go from [0, CHUNK_DIMENSION_IN_METERS_X - 1], etc.
 #define CHUNK_DIMENSION_IN_METERS_X (17)
 #define CHUNK_DIMENSION_IN_METERS_Y (11)
 
@@ -65,8 +65,6 @@ typedef struct
 // they update. high_freq_entities are those that are update as frequently as
 // possible. The player and entites around the player fall into this category.
 // low_freq_entities are those that are not updated as frequently as player.
-
-#define MAX_NUMBER_OF_ENTITIES 1024 * 4
 
 typedef enum
 {
@@ -86,16 +84,19 @@ typedef struct
 {
     game_position_t position;
     v2f32_t dimension;
+    game_entity_type_t entity_type;
 } game_entity_t;
 
 typedef struct
 {
-    game_entity_state_t entity_states[MAX_NUMBER_OF_ENTITIES];
-    game_entity_type_t entity_type[MAX_NUMBER_OF_ENTITIES];
-    game_entity_t entities[MAX_NUMBER_OF_ENTITIES];
+    game_entity_t high_freq_entities[128];
+    u32 high_freq_entity_count;
+
+    game_entity_t low_freq_entities[8192];
+    u32 low_freq_entity_count;
 
     u32 index_of_last_created_entity;
-    u32 player_entity_index;
+    u32 player_high_freq_entity_index;
 
     game_position_t camera_world_position;
 } game_world_t;

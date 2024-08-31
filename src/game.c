@@ -10,35 +10,144 @@ global_variable game_counter_t *global_game_counters = NULL;
 
 #include "renderer.h"
 
-internal game_entity_t *create_entity(game_world_t *game_world,
-                                      game_entity_state_t entity_state,
-                                      game_entity_type_t entity_type,
-                                      game_position_t position,
-                                      v2f32_t dimension)
+// when entites are created, they are all in low freq state.
+internal u32 create_entity(game_world_t *game_world,
+                           game_entity_type_t entity_type,
+                           game_position_t position, v2f32_t dimension)
 {
-    ASSERT(game_world->index_of_last_created_entity < MAX_NUMBER_OF_ENTITIES);
+    ASSERT(game_world->low_freq_entity_count <
+           ARRAY_COUNT(game_world->low_freq_entities));
 
-    u32 entity_index = ++game_world->index_of_last_created_entity;
+    u32 low_freq_entity_index = game_world->low_freq_entity_count++;
 
-    game_world->entity_states[entity_index] = entity_state;
-    game_world->entity_type[entity_index] = entity_type;
-    game_world->entities[entity_index].position = position;
-    game_world->entities[entity_index].dimension = dimension;
+    game_world->low_freq_entities[low_freq_entity_index].position = position;
+    game_world->low_freq_entities[low_freq_entity_index].dimension = dimension;
+    game_world->low_freq_entities[low_freq_entity_index].entity_type =
+        entity_type;
 
-    game_entity_t *entity = &game_world->entities[entity_index];
-
-    return entity;
+    return low_freq_entity_index;
 }
 
-internal game_entity_t *get_entity(game_world_t *game_world, u32 index)
+// Move a entity from the low freq array to the high freq array.
+// Returns high freq entity index.
+internal u32 make_entity_high_freq(game_world_t *game_world, u32 low_freq_index)
 {
-    ASSERT(index < MAX_NUMBER_OF_ENTITIES);
+    // What should this array do :
+    // (i) Create a high freq entity and add to the high freq entity array.
+    // (ii) Move the low freq entity out of the array, and take the last element
+    // in that array and place it in the previous low freq entities slot.
 
-    game_entity_t *entity = &game_world->entities[index];
+    ASSERT(low_freq_index < ARRAY_COUNT(game_world->low_freq_entities));
 
-    return entity;
+    game_entity_t *low_freq_entity =
+        &game_world->low_freq_entities[low_freq_index];
+
+    if (game_world->high_freq_entity_count <
+        ARRAY_COUNT(game_world->high_freq_entities))
+    {
+
+        u32 high_freq_entity_index = game_world->high_freq_entity_count++;
+
+        game_world->high_freq_entities[high_freq_entity_index].position =
+            low_freq_entity->position;
+
+        game_world->high_freq_entities[high_freq_entity_index].dimension =
+            low_freq_entity->dimension;
+
+        game_world->high_freq_entities[high_freq_entity_index].entity_type =
+            low_freq_entity->entity_type;
+
+        // If the low freq index is the last element of the array, simply
+        // decrement low freq entity count.
+        if (low_freq_index == ARRAY_COUNT(game_world->low_freq_entities) - 1)
+        {
+            game_world->low_freq_entity_count--;
+
+            return high_freq_entity_index;
+        }
+        else
+        {
+            game_entity_t last_low_freq_entity =
+                game_world
+                    ->low_freq_entities[game_world->low_freq_entity_count];
+
+            game_world->low_freq_entities[low_freq_index] =
+                last_low_freq_entity;
+            --game_world->low_freq_entity_count;
+
+            return high_freq_entity_index;
+        }
+    }
+
+    else
+    {
+        // If the code reaches here, a high freq entity can NOT be created as
+        // the high freq array list is already full.
+    }
+
+    return 0;
 }
 
+// Move a entity from the high freq array to the low freq array.
+// Returns low freq entity index.
+internal u32 make_entity_low_freq(game_world_t *game_world, u32 high_freq_index)
+{
+    // What should this array do :
+    // (i) Create a low freq entity and add to the low freq entity array.
+    // (ii) Move the high freq entity out of the array, and take the last
+    // element in that array and place it in the previous high freq entities
+    // slot.
+
+    ASSERT(high_freq_index < ARRAY_COUNT(game_world->high_freq_entities));
+
+    game_entity_t *high_freq_entity =
+        &game_world->high_freq_entities[high_freq_index];
+
+    if (game_world->low_freq_entity_count <
+        ARRAY_COUNT(game_world->low_freq_entities))
+    {
+
+        u32 low_freq_entity_index = game_world->low_freq_entity_count++;
+
+        game_world->low_freq_entities[low_freq_entity_index].position =
+            high_freq_entity->position;
+
+        game_world->low_freq_entities[low_freq_entity_index].dimension =
+            high_freq_entity->dimension;
+
+        game_world->low_freq_entities[low_freq_entity_index].entity_type =
+            high_freq_entity->entity_type;
+
+        // If the high freq index is the last element of the array, simply
+        // decrement high freq entity count.
+        if (high_freq_index == ARRAY_COUNT(game_world->high_freq_entities) - 1)
+        {
+            game_world->high_freq_entity_count--;
+
+            return low_freq_entity_index;
+        }
+        else
+        {
+            game_entity_t last_high_freq_entity =
+                game_world
+                    ->high_freq_entities[game_world->high_freq_entity_count];
+
+            game_world->high_freq_entities[high_freq_index] =
+                last_high_freq_entity;
+
+            --game_world->high_freq_entity_count;
+
+            return low_freq_entity_index;
+        }
+    }
+    else
+    {
+        // If the code reaches here, a low freq entity can NOT be created as
+        // the low freq array list is already full.
+    }
+
+    return 0;
+}
 // Ref for understanding the BMP file format :
 // https://gibberlings3.github.io/iesdp/file_formats/ie_formats/bmp_v5.htm
 // Use pragma pack so that the padding of struct and all elements is 1 byte.
@@ -168,23 +277,26 @@ __declspec(dllexport) void game_update_and_render(
             (v2f64_t){(f64)CHUNK_DIMENSION_IN_METERS_X / 4.0f,
                       (f64)CHUNK_DIMENSION_IN_METERS_Y / 4.0f};
 
-        create_entity(&game_state->game_world, game_entity_state_high_freq,
-                      game_entity_type_player, player_position,
-                      (v2f32_t){(f32)0.5f, (f32)0.5f});
+        u32 player_low_freq_entity_index =
+            create_entity(&game_state->game_world, game_entity_type_player,
+                          player_position, (v2f32_t){(f32)0.5f, (f32)0.5f});
 
-        game_state->game_world.player_entity_index =
-            game_state->game_world.index_of_last_created_entity;
+        u32 player_high_freq_entity_index = make_entity_high_freq(
+            &game_state->game_world, player_low_freq_entity_index);
+
+        game_state->game_world.player_high_freq_entity_index =
+            player_high_freq_entity_index;
 
         // Create a few chunks for the player to roam in.
-        for (i32 chunk_y = -2; chunk_y <= 2; chunk_y++)
+        for (i32 chunk_y = -5; chunk_y <= 5; chunk_y++)
         {
-            for (i32 chunk_x = -2; chunk_x <= 2; chunk_x++)
+            for (i32 chunk_x = -5; chunk_x <= 5; chunk_x++)
             {
                 v2f64_t chunk_relative_tile_entity_offset =
                     (v2f64_t){(f64)chunk_x * CHUNK_DIMENSION_IN_METERS_X,
                               (f64)chunk_y * CHUNK_DIMENSION_IN_METERS_Y};
 
-                for (i32 tile_y = 0; tile_y <= CHUNK_DIMENSION_IN_METERS_Y;
+                for (i32 tile_y = 0; tile_y < CHUNK_DIMENSION_IN_METERS_Y;
                      tile_y++)
                 {
                     if (tile_y == CHUNK_DIMENSION_IN_METERS_Y / 2)
@@ -198,22 +310,22 @@ __declspec(dllexport) void game_update_and_render(
                     position.position = v2f64_add(
                         position.position, chunk_relative_tile_entity_offset);
 
-                    create_entity(
-                        &game_state->game_world, game_entity_state_high_freq,
-                        game_entity_type_wall, position, (v2f32_t){1.0f, 1.0f});
+                    create_entity(&game_state->game_world,
+                                  game_entity_type_wall, position,
+                                  (v2f32_t){1.0f, 1.0f});
 
                     position.position = (v2f64_t){
-                        (f64)(CHUNK_DIMENSION_IN_METERS_X), (f64)tile_y};
+                        (f64)(CHUNK_DIMENSION_IN_METERS_X - 1), (f64)tile_y};
                     position.position = v2f64_add(
                         position.position, chunk_relative_tile_entity_offset);
 
-                    create_entity(
-                        &game_state->game_world, game_entity_state_high_freq,
-                        game_entity_type_wall, position, (v2f32_t){1.0f, 1.0f});
+                    create_entity(&game_state->game_world,
+                                  game_entity_type_wall, position,
+                                  (v2f32_t){1.0f, 1.0f});
                 }
 
                 // Set the top and bottom border as obstacles.
-                for (i32 tile_x = 0; tile_x <= CHUNK_DIMENSION_IN_METERS_X;
+                for (i32 tile_x = 0; tile_x < CHUNK_DIMENSION_IN_METERS_X;
                      tile_x++)
                 {
                     if (tile_x == CHUNK_DIMENSION_IN_METERS_X / 2)
@@ -226,18 +338,18 @@ __declspec(dllexport) void game_update_and_render(
                     position.position = v2f64_add(
                         position.position, chunk_relative_tile_entity_offset);
 
-                    create_entity(
-                        &game_state->game_world, game_entity_state_high_freq,
-                        game_entity_type_wall, position, (v2f32_t){1.0f, 1.0f});
+                    create_entity(&game_state->game_world,
+                                  game_entity_type_wall, position,
+                                  (v2f32_t){1.0f, 1.0f});
 
                     position.position = (v2f64_t){
-                        (f64)tile_x, (f64)CHUNK_DIMENSION_IN_METERS_Y};
+                        (f64)tile_x, (f64)CHUNK_DIMENSION_IN_METERS_Y - 1};
                     position.position = v2f64_add(
                         position.position, chunk_relative_tile_entity_offset);
 
-                    create_entity(
-                        &game_state->game_world, game_entity_state_high_freq,
-                        game_entity_type_wall, position, (v2f32_t){1.0f, 1.0f});
+                    create_entity(&game_state->game_world,
+                                  game_entity_type_wall, position,
+                                  (v2f32_t){1.0f, 1.0f});
                 }
             }
         }
@@ -245,6 +357,85 @@ __declspec(dllexport) void game_update_and_render(
     }
 
     game_world_t *game_world = &game_state->game_world;
+
+    i64 camera_current_chunk_x =
+        floor_f64_to_i64((game_world->camera_world_position.position.x) /
+                         ((f64)CHUNK_DIMENSION_IN_METERS_X));
+
+    i64 camera_current_chunk_y =
+        floor_f64_to_i64((game_world->camera_world_position.position.y) /
+                         (f64)(CHUNK_DIMENSION_IN_METERS_Y));
+
+    // Take the current camera position, and the high frequency entities that
+    // are not in the same chunk as player, move it to low freq array.
+    for (u32 entity_index = 0;
+         entity_index < game_world->high_freq_entity_count;)
+    {
+        // NOTE: ignore the player, as player will always be high frequency.
+        if (entity_index == game_world->player_high_freq_entity_index)
+        {
+            ++entity_index;
+            continue;
+        }
+
+        game_entity_t *high_freq_entity =
+            &game_world->high_freq_entities[entity_index];
+
+        i64 entity_current_chunk_x =
+            floor_f64_to_i64((high_freq_entity->position.position.x) /
+                             ((f64)CHUNK_DIMENSION_IN_METERS_X));
+
+        i64 entity_current_chunk_y =
+            floor_f64_to_i64((high_freq_entity->position.position.y) /
+                             (f64)(CHUNK_DIMENSION_IN_METERS_Y));
+
+        if (entity_current_chunk_x != camera_current_chunk_x ||
+            entity_current_chunk_y != camera_current_chunk_y)
+        {
+            if (!make_entity_low_freq(game_world, entity_index))
+            {
+                break;
+            }
+        }
+        else
+        {
+            ++entity_index;
+        }
+    }
+    // Take the current camera position, and whatever is in the SAME chunk as
+    // camera, make it high frequency.
+
+    for (u32 entity_index = 0;
+         entity_index < game_world->low_freq_entity_count;)
+    {
+        game_entity_t *low_freq_entity =
+            &game_world->low_freq_entities[entity_index];
+
+        i64 entity_current_chunk_x =
+            floor_f64_to_i64((low_freq_entity->position.position.x) /
+                             ((f64)CHUNK_DIMENSION_IN_METERS_X));
+
+        i64 entity_current_chunk_y =
+            floor_f64_to_i64((low_freq_entity->position.position.y) /
+                             (f64)(CHUNK_DIMENSION_IN_METERS_Y));
+
+        if (entity_current_chunk_x == camera_current_chunk_x &&
+            entity_current_chunk_y == camera_current_chunk_y)
+        {
+            // TODO: Is there a better way to handle this?
+            // If the high freq array is already full, just increase the entity
+            // index so that application will not lag and freeze in infinite
+            // loop.
+            if (!make_entity_high_freq(game_world, entity_index))
+            {
+                break;
+            }
+        }
+        else
+        {
+            ++entity_index;
+        }
+    }
 
     // Update player position based on input.
     // Explanation of the movement logic.
@@ -292,8 +483,9 @@ __declspec(dllexport) void game_update_and_render(
                                         0.5f * game_input->dt_for_frame *
                                             game_input->dt_for_frame)));
 
-    game_entity_t *player_entity = get_entity(
-        &game_state->game_world, game_state->game_world.player_entity_index);
+    game_entity_t *player_entity =
+        &game_world
+             ->high_freq_entities[game_world->player_high_freq_entity_index];
 
     player_new_position =
         v2f64_add(player_new_position, player_entity->position.position);
@@ -307,22 +499,21 @@ __declspec(dllexport) void game_update_and_render(
     b32 player_collided = 0;
     v2f32_t wall_normal = (v2f32_t){0.0f, 0.0f};
 
-    for (u32 entity_index = 0; entity_index < MAX_NUMBER_OF_ENTITIES;
-         entity_index++)
+    for (u32 entity_index = 0;
+         entity_index < game_world->high_freq_entity_count; entity_index++)
     {
-        if (entity_index == game_world->player_entity_index)
+        if (entity_index == game_world->player_high_freq_entity_index)
         {
             continue;
         }
 
-        if (game_state->game_world.entity_states[entity_index] ==
-            game_entity_state_does_not_exist)
+        if (game_state->game_world.high_freq_entities[entity_index]
+                .entity_type == game_entity_state_does_not_exist)
         {
             continue;
         }
 
-        game_entity_t *entity =
-            get_entity(&game_state->game_world, entity_index);
+        game_entity_t *entity = &game_world->high_freq_entities[entity_index];
 
         rectangle_t entity_rect = rectangle_from_center_and_origin(
             convert_to_v2f32(
@@ -478,11 +669,10 @@ __declspec(dllexport) void game_update_and_render(
     }
 
     // Render entites
-    for (u32 entity_index = 0; entity_index < MAX_NUMBER_OF_ENTITIES;
-         entity_index++)
+    for (u32 entity_index = 0;
+         entity_index < game_world->high_freq_entity_count; entity_index++)
     {
-        game_entity_t *entity =
-            get_entity(&game_state->game_world, entity_index);
+        game_entity_t *entity = &game_world->high_freq_entities[entity_index];
 
         v2f32_t entity_camera_relative_position_v2f32 = convert_to_v2f32(
             v2f64_subtract(entity->position.position,
@@ -500,8 +690,8 @@ __declspec(dllexport) void game_update_and_render(
                                 game_framebuffer->height / 2.0f},
                       entity_bottom_left_position_in_pixels);
 
-        if (game_state->game_world.entity_type[entity_index] ==
-            game_entity_type_player)
+        if (game_state->game_world.high_freq_entities[entity_index]
+                .entity_type == game_entity_type_player)
         {
             draw_rectangle(game_framebuffer, rendering_offset,
                            v2f32_scalar_multiply(entity->dimension,
@@ -524,8 +714,8 @@ __declspec(dllexport) void game_update_and_render(
             draw_texture(&game_state->player_texture, game_framebuffer,
                          player_sprite_bottom_left_offset);
         }
-        else if (game_state->game_world.entity_type[entity_index] ==
-                 game_entity_type_wall)
+        else if (game_state->game_world.high_freq_entities[entity_index]
+                     .entity_type == game_entity_type_wall)
         {
             draw_rectangle(game_framebuffer, rendering_offset,
                            v2f32_scalar_multiply(entity->dimension,
