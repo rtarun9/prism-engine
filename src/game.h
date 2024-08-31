@@ -47,7 +47,9 @@ typedef struct
 
 // All chunks share the same dimension in terms of meters.
 // The center of a chunk is 0, 0, and extents within a chunk go from
-// [-CHUNK_DIMENSION_IN_METERS_X, CHUNK_DIMENSION_IN_METERS_x], etc.
+// [-CHUNK_DIMENSION_IN_METERS_X / 2, CHUNK_DIMENSION_IN_METERS_X / 2], etc.
+// TODO: Better name for this? Since the chunk can technically go from
+// -CHUNK_DIMENSION_... / 2 to the positive half.
 #define CHUNK_DIMENSION_IN_METERS_X (17)
 #define CHUNK_DIMENSION_IN_METERS_Y (11)
 

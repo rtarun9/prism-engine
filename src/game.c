@@ -173,7 +173,6 @@ __declspec(dllexport) void game_update_and_render(
         game_state->game_world.player_entity_index =
             game_state->game_world.index_of_last_created_entity;
 
-        // Setup a basic chunk.
         for (i32 tile_y = -CHUNK_DIMENSION_IN_METERS_Y / 2;
              tile_y <= CHUNK_DIMENSION_IN_METERS_Y / 2; tile_y++)
         {
@@ -281,10 +280,11 @@ __declspec(dllexport) void game_update_and_render(
     player_new_position =
         v2f64_add(player_new_position, player_entity->position.position);
 
-    // TODO: Perform AABB in camera relative OR even player relative coords.
     // Perform simple AABB collision.
     rectangle_t player_rect = rectangle_from_center_and_origin(
-        convert_to_v2f32(player_new_position), player_entity->dimension);
+        convert_to_v2f32(v2f64_subtract(
+            player_new_position, game_world->camera_world_position.position)),
+        player_entity->dimension);
 
     b32 player_collided = 0;
     v2f32_t wall_normal = (v2f32_t){0.0f, 0.0f};
@@ -307,7 +307,10 @@ __declspec(dllexport) void game_update_and_render(
             get_entity(&game_state->game_world, entity_index);
 
         rectangle_t entity_rect = rectangle_from_center_and_origin(
-            convert_to_v2f32(entity->position.position), entity->dimension);
+            convert_to_v2f32(
+                v2f64_subtract(entity->position.position,
+                               game_world->camera_world_position.position)),
+            entity->dimension);
 
         b32 left_edge_collision =
             (player_rect.bottom_left_x <
@@ -391,7 +394,7 @@ __declspec(dllexport) void game_update_and_render(
             v2f32_subtract(game_state->player_velocity,
                            v2f32_scalar_multiply(
                                velocity_vector_to_wall_projection, 2.0f)),
-            1.9f);
+            0.9f);
 
         game_state->player_velocity = reflection_vector;
     }
@@ -402,92 +405,64 @@ __declspec(dllexport) void game_update_and_render(
         (v2f32_t){(f32)game_framebuffer->width, (f32)game_framebuffer->height},
         0.0f, 0.0f, 0.0f);
 
-#if 0
-    // Rendering offsets. The value are computed such that the current chunk is
-    // at the center of the screen.
-    vector2_t tile_map_rendering_bottom_left_offset = {0};
-    tile_map_rendering_bottom_left_offset.x =
-        game_framebuffer->width / 2.0f -
-        GET_TILE_INDEX(
-            game_state->game_world.camera_world_position.tile_index_x) *
-            game_world.tile_dimension -
-        game_world.tile_dimension / 2.0f;
+    // If the player moves out of the current chunk, perform a smooth scroll on
+    // the camera until it reaches the center of the players new chunk.
+    i32 player_position_x_sign =
+        player_entity->position.position.x > 0 ? 1 : -1;
+    i32 player_position_y_sign =
+        player_entity->position.position.y > 0 ? 1 : -1;
 
-    tile_map_rendering_bottom_left_offset.y =
-        game_framebuffer->height / 2.0f -
-        GET_TILE_INDEX(
-            game_state->game_world.camera_world_position.tile_index_y) *
-            game_world.tile_dimension -
-        game_world.tile_dimension / 2.0f;
+    i64 player_current_chunk_x = truncate_f64_to_i64(
+        (player_entity->position.position.x +
+         player_position_x_sign * CHUNK_DIMENSION_IN_METERS_X / 2) /
+        ((f64)CHUNK_DIMENSION_IN_METERS_X));
 
-    game_tile_map_position_difference_t player_and_camera_difference =
-        tile_map_position_difference(
-            &player_position, &game_state->game_world.camera_world_position);
+    i64 player_current_chunk_y = truncate_f64_to_i64(
+        (player_entity->position.position.y +
+         player_position_y_sign * CHUNK_DIMENSION_IN_METERS_Y / 2) /
+        (f64)(CHUNK_DIMENSION_IN_METERS_Y));
 
-    if (player_and_camera_difference.chunk_x_diff != 0 ||
-        player_and_camera_difference.chunk_y_diff != 0)
+    f64 player_current_chunk_center_x =
+        (f64)(player_current_chunk_x * CHUNK_DIMENSION_IN_METERS_X);
+
+    f64 player_current_chunk_center_y =
+        (f64)(player_current_chunk_y * CHUNK_DIMENSION_IN_METERS_Y);
+
+    if (player_current_chunk_center_x !=
+            game_world->camera_world_position.position.x ||
+        player_current_chunk_center_y !=
+            game_world->camera_world_position.position.y)
     {
-        // Now, set the camera position to the same as player. Continue to move
-        // the camera's position until the tile is the center of the chunk.
-        game_state->game_world.camera_world_position = player_position;
+        // Find the direction camera has to move.
+        i64 direction_to_move_x =
+            truncate_f64_to_i64(player_current_chunk_center_x -
+                                game_world->camera_world_position.position.x);
+
+        i64 direction_to_move_y =
+            truncate_f64_to_i64(player_current_chunk_center_y -
+                                game_world->camera_world_position.position.y);
+
+        if (direction_to_move_x > 1)
+        {
+            direction_to_move_x = 1;
+        }
+        else if (direction_to_move_x < 0)
+        {
+            direction_to_move_x = -1;
+        }
+
+        if (direction_to_move_y > 1)
+        {
+            direction_to_move_y = 1;
+        }
+        else if (direction_to_move_y < 0)
+        {
+            direction_to_move_y = -1;
+        }
+
+        game_world->camera_world_position.position.x += direction_to_move_x;
+        game_world->camera_world_position.position.y += direction_to_move_y;
     }
-
-    // check if camera tile is the center chunk.
-    u32 camera_tile_x = GET_TILE_INDEX(
-        game_state->game_world.camera_world_position.tile_index_x);
-    u32 camera_tile_y = GET_TILE_INDEX(
-        game_state->game_world.camera_world_position.tile_index_y);
-
-    if (camera_tile_x != NUMBER_OF_TILES_PER_CHUNK_X / 2 ||
-        camera_tile_y != NUMBER_OF_TILES_PER_CHUNK_Y / 2)
-    {
-        u32 current_camera_chunk_center_tile_index_x =
-            NUMBER_OF_TILES_PER_CHUNK_X / 2;
-
-        u32 current_camera_chunk_center_tile_index_y =
-            NUMBER_OF_TILES_PER_CHUNK_Y / 2;
-
-        i32 direction_to_move_camera_to_reach_chunk_center_x =
-            (current_camera_chunk_center_tile_index_x - camera_tile_x);
-
-        if (direction_to_move_camera_to_reach_chunk_center_x > 1)
-        {
-            direction_to_move_camera_to_reach_chunk_center_x = 1;
-        }
-        else if (direction_to_move_camera_to_reach_chunk_center_x < 0)
-        {
-            direction_to_move_camera_to_reach_chunk_center_x = -1;
-        }
-
-        i32 direction_to_move_camera_to_reach_chunk_center_y =
-            (current_camera_chunk_center_tile_index_y - camera_tile_y);
-
-        if (direction_to_move_camera_to_reach_chunk_center_y > 1)
-        {
-            direction_to_move_camera_to_reach_chunk_center_y = 1;
-        }
-        else if (direction_to_move_camera_to_reach_chunk_center_y < 0)
-        {
-            direction_to_move_camera_to_reach_chunk_center_y = -1;
-        }
-
-        // Advance the camera tile by 1.
-        game_state->game_world.camera_world_position.tile_index_x =
-            SET_TILE_INDEX(
-                game_state->game_world.camera_world_position.tile_index_x,
-                (GET_TILE_INDEX(game_state->game_world.camera_world_position
-                                    .tile_index_x)) +
-                    direction_to_move_camera_to_reach_chunk_center_x);
-
-        game_state->game_world.camera_world_position.tile_index_y =
-            SET_TILE_INDEX(
-                game_state->game_world.camera_world_position.tile_index_y,
-                (GET_TILE_INDEX(game_state->game_world.camera_world_position
-                                    .tile_index_y)) +
-                    direction_to_move_camera_to_reach_chunk_center_y);
-    }
-
-#endif
 
     // Render entites
     for (u32 entity_index = 0; entity_index < MAX_NUMBER_OF_ENTITIES;
