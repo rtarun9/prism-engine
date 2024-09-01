@@ -10,6 +10,96 @@ global_variable game_counter_t *global_game_counters = NULL;
 
 #include "renderer.h"
 
+game_chunk_t *get_game_chunk(game_world_t *game_world, i64 chunk_index_x,
+                             i64 chunk_index_y)
+{
+    // TODO: When collisions become a problem, the hash function should probably
+    // be updated.
+    // For simplicity, number of entries in the chunk hash map array is assumed
+    // to be powers of 2. This will make getting a valid index from hash value
+    // easy, as power of 2 - 1 gives a mask.
+    u32 hash_value = (chunk_index_x * 3 + chunk_index_y * 66) &
+                     (ARRAY_COUNT(game_world->chunk_hash_map) - 1);
+
+    game_chunk_t *chunk = &game_world->chunk_hash_map[hash_value];
+    while (chunk && (chunk->chunk_index_x != chunk_index_x &&
+                     chunk->chunk_index_y != chunk_index_y))
+    {
+        chunk = chunk->next_chunk;
+    }
+
+    ASSERT(chunk);
+    ASSERT(chunk->chunk_index_x == chunk_index_x &&
+           chunk->chunk_index_y == chunk_index_y);
+
+    return chunk;
+}
+
+// Call this function to create a new game chunk and add to the hash map.
+game_chunk_t *set_game_chunk(game_world_t *game_world, i64 chunk_index_x,
+                             i64 chunk_index_y,
+                             arena_allocator_t *arena_allocator)
+{
+    ASSERT(arena_allocator);
+
+    // TODO: When collisions become a problem, the hash function should probably
+    // be updated.
+    // For simplicity, number of entries in the chunk hash map array is assumed
+    // to be powers of 2. This will make getting a valid index from hash value
+    // easy, as power of 2 - 1 gives a mask.
+    u32 hash_value = (chunk_index_x * 3 + chunk_index_y * 66) &
+                     (ARRAY_COUNT(game_world->chunk_hash_map) - 1);
+
+    game_chunk_t *chunk = &game_world->chunk_hash_map[hash_value];
+
+    // Check to see if the head is empty (i.e the sentinel value in
+    // chunk_hash_map).
+    if (!chunk->chunk_entity_block)
+    {
+        chunk->chunk_entity_block =
+            (game_chunk_entity_block_t *)arena_alloc_default_aligned(
+                arena_allocator, sizeof(game_chunk_entity_block_t));
+
+        chunk->chunk_index_x = chunk_index_x;
+        chunk->chunk_index_y = chunk_index_y;
+
+        return chunk;
+    }
+    else
+    {
+        // Find the tail element and set its next chunk pointer to a new chunk.
+        while (chunk->next_chunk)
+        {
+            chunk = chunk->next_chunk;
+        }
+
+        ASSERT(chunk && !chunk->next_chunk);
+
+        game_chunk_t *new_chunk = (game_chunk_t *)arena_alloc_default_aligned(
+            arena_allocator, sizeof(game_chunk_t));
+
+        new_chunk->chunk_entity_block =
+            (game_chunk_entity_block_t *)arena_alloc_default_aligned(
+                arena_allocator, sizeof(game_chunk_entity_block_t));
+
+        new_chunk->chunk_index_x = chunk_index_x;
+        new_chunk->chunk_index_y = chunk_index_y;
+
+        chunk->next_chunk = new_chunk;
+
+        return new_chunk;
+    }
+
+    ASSERT("Code should never reach here!!!");
+    ASSERT(0);
+
+    return NULL;
+}
+
+// Given a entity and its new and old position, place it in the correct chunk's
+// entity block.
+// void place_entity_in_chunk_entiity_block(game_entity_t* entity, g
+
 // when entites are created, they are all in low freq state.
 internal u32 create_entity(game_world_t *game_world,
                            game_entity_type_t entity_type,
@@ -59,7 +149,7 @@ internal u32 make_entity_high_freq(game_world_t *game_world, u32 low_freq_index)
 
         // If the low freq index is the last element of the array, simply
         // decrement low freq entity count.
-        if (low_freq_index == ARRAY_COUNT(game_world->low_freq_entities) - 1)
+        if (low_freq_index == game_world->low_freq_entity_count - 1)
         {
             game_world->low_freq_entity_count--;
 
@@ -69,7 +159,7 @@ internal u32 make_entity_high_freq(game_world_t *game_world, u32 low_freq_index)
         {
             game_entity_t last_low_freq_entity =
                 game_world
-                    ->low_freq_entities[game_world->low_freq_entity_count];
+                    ->low_freq_entities[game_world->low_freq_entity_count - 1];
 
             game_world->low_freq_entities[low_freq_index] =
                 last_low_freq_entity;
@@ -120,7 +210,7 @@ internal u32 make_entity_low_freq(game_world_t *game_world, u32 high_freq_index)
 
         // If the high freq index is the last element of the array, simply
         // decrement high freq entity count.
-        if (high_freq_index == ARRAY_COUNT(game_world->high_freq_entities) - 1)
+        if (high_freq_index == game_world->high_freq_entity_count - 1)
         {
             game_world->high_freq_entity_count--;
 
@@ -130,7 +220,8 @@ internal u32 make_entity_low_freq(game_world_t *game_world, u32 high_freq_index)
         {
             game_entity_t last_high_freq_entity =
                 game_world
-                    ->high_freq_entities[game_world->high_freq_entity_count];
+                    ->high_freq_entities[game_world->high_freq_entity_count -
+                                         1];
 
             game_world->high_freq_entities[high_freq_index] =
                 last_high_freq_entity;
@@ -292,6 +383,10 @@ __declspec(dllexport) void game_update_and_render(
         {
             for (i32 chunk_x = -5; chunk_x <= 5; chunk_x++)
             {
+                game_chunk_t *chunk =
+                    set_game_chunk(&game_state->game_world, chunk_x, chunk_y,
+                                   &game_state->memory_arena);
+
                 v2f64_t chunk_relative_tile_entity_offset =
                     (v2f64_t){(f64)chunk_x * CHUNK_DIMENSION_IN_METERS_X,
                               (f64)chunk_y * CHUNK_DIMENSION_IN_METERS_Y};
@@ -631,6 +726,10 @@ __declspec(dllexport) void game_update_and_render(
     f64 player_current_chunk_center_y =
         (f64)(player_current_chunk_y * CHUNK_DIMENSION_IN_METERS_Y +
               0.5f * CHUNK_DIMENSION_IN_METERS_Y);
+
+    // Get the current chunk the player is in.
+    game_chunk_t *current_player_chunk = get_game_chunk(
+        game_world, player_current_chunk_x, player_current_chunk_y);
 
     if (player_current_chunk_center_x !=
             game_world->camera_world_position.position.x ||

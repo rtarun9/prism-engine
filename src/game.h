@@ -87,6 +87,35 @@ typedef struct
     game_entity_type_t entity_type;
 } game_entity_t;
 
+// To partition entities spatially, a hash map of chunks is created, where
+// each chunk consist of its index, and a list of the low frequenty entity
+// indexes that are present in that chunk. This will make querying for
+// entities in certain chunks very efficient.
+// Since the number of low frequency entities is not constant, each chunk has a
+// chunk entity block linked list.
+typedef struct
+{
+    u32 low_freq_entity_indices[32];
+    u32 low_freq_entity_count;
+
+    struct game_chunk_entity_block_t *next_chunk_entity_block;
+} game_chunk_entity_block_t;
+
+// NOTE: A null chunk entity block will be used to check if chunk is invalid or
+// not.
+typedef struct game_chunk_t
+{
+    i64 chunk_index_x;
+    i64 chunk_index_y;
+
+    game_chunk_entity_block_t *chunk_entity_block;
+
+    // Since game chunk is a SLL (single linked list), a next pointer is
+    // required.
+    struct game_chunk_t *next_chunk;
+
+} game_chunk_t;
+
 typedef struct
 {
     game_entity_t high_freq_entities[128];
@@ -97,6 +126,8 @@ typedef struct
 
     u32 index_of_last_created_entity;
     u32 player_high_freq_entity_index;
+
+    game_chunk_t chunk_hash_map[256];
 
     game_position_t camera_world_position;
 } game_world_t;
