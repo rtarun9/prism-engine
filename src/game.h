@@ -93,7 +93,7 @@ typedef struct
 // entities in certain chunks very efficient.
 // Since the number of low frequency entities is not constant, each chunk has a
 // chunk entity block linked list.
-typedef struct
+typedef struct game_chunk_entity_block_t
 {
     u32 low_freq_entity_indices[32];
     u32 low_freq_entity_count;

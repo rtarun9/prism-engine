@@ -10,6 +10,24 @@ global_variable game_counter_t *global_game_counters = NULL;
 
 #include "renderer.h"
 
+typedef struct
+{
+    i64 chunk_x;
+    i64 chunk_y;
+} game_chunk_index_pair_t;
+
+game_chunk_index_pair_t get_chunk_index_from_position(game_position_t position)
+{
+    game_chunk_index_pair_t result = {0};
+
+    result.chunk_x = floor_f64_to_i64((position.position.x) /
+                                      ((f64)CHUNK_DIMENSION_IN_METERS_X));
+
+    result.chunk_y = floor_f64_to_i64((position.position.y) /
+                                      ((f64)CHUNK_DIMENSION_IN_METERS_Y));
+
+    return result;
+}
 game_chunk_t *get_game_chunk(game_world_t *game_world, i64 chunk_index_x,
                              i64 chunk_index_y)
 {
@@ -28,6 +46,7 @@ game_chunk_t *get_game_chunk(game_world_t *game_world, i64 chunk_index_x,
         chunk = chunk->next_chunk;
     }
 
+    // If chunk is null, then it has NOT been set.
     ASSERT(chunk);
     ASSERT(chunk->chunk_index_x == chunk_index_x &&
            chunk->chunk_index_y == chunk_index_y);
@@ -95,10 +114,6 @@ game_chunk_t *set_game_chunk(game_world_t *game_world, i64 chunk_index_x,
 
     return NULL;
 }
-
-// Given a entity and its new and old position, place it in the correct chunk's
-// entity block.
-// void place_entity_in_chunk_entiity_block(game_entity_t* entity, g
 
 // when entites are created, they are all in low freq state.
 internal u32 create_entity(game_world_t *game_world,
@@ -178,6 +193,94 @@ internal u32 make_entity_high_freq(game_world_t *game_world, u32 low_freq_index)
     return 0;
 }
 
+// Place entity in the correct tile chunk.
+void place_entity_in_tile_chunk(
+    game_world_t *restrict game_world, u32 entity_low_freq_index,
+    game_chunk_index_pair_t chunk_to_place_entity_in,
+    arena_allocator_t *restrict arena_allocator)
+{
+    i64 chunk_index_x = chunk_to_place_entity_in.chunk_x;
+    i64 chunk_index_y = chunk_to_place_entity_in.chunk_y;
+
+    // If the entity is ALREADY in the chunk_to_place_in, no action is required
+    // to be taken.
+    u32 hash_value = (chunk_to_place_entity_in.chunk_x * 3 +
+                      chunk_to_place_entity_in.chunk_y * 66) &
+                     (ARRAY_COUNT(game_world->chunk_hash_map) - 1);
+
+    game_chunk_t *chunk = &game_world->chunk_hash_map[hash_value];
+    while (chunk && (chunk->chunk_index_x != chunk_index_x &&
+                     chunk->chunk_index_y != chunk_index_y))
+    {
+        chunk = chunk->next_chunk;
+    }
+
+    // If chunk is null, then it has NOT been set.
+    ASSERT(chunk);
+    ASSERT(chunk->chunk_index_x == chunk_index_x &&
+           chunk->chunk_index_y == chunk_index_y);
+
+    // Now, go over the entity blocks to see if entities low freq index is
+    // already in it.
+    game_chunk_entity_block_t *chunk_entity_block = chunk->chunk_entity_block;
+
+    b32 entity_in_chunk_already = 0;
+
+    while (chunk_entity_block)
+    {
+        // TODO: Try moving this computation to SIMD.
+        for (u32 entity_index = 0;
+             entity_index < chunk_entity_block->low_freq_entity_count;
+             entity_index++)
+        {
+            if (entity_index == entity_low_freq_index)
+            {
+                entity_in_chunk_already = 1;
+            }
+        }
+
+        if (chunk_entity_block->next_chunk_entity_block)
+        {
+            chunk_entity_block = chunk_entity_block->next_chunk_entity_block;
+        }
+        else
+        {
+            break;
+        }
+    }
+
+    if (entity_in_chunk_already == 1)
+    {
+        return;
+    }
+
+    // If entity is not in chunk, first remove entity from the previous chunk
+    // (if it was in one), and add to new chunk.
+
+    // TODO: Remove entity from what chunk it was already in
+
+    // Add entity to new chunk.
+    // Create entity block if it does not exist.
+    // If the entity block is full, allocate a new one.
+    if (chunk_entity_block->low_freq_entity_count <
+        ARRAY_COUNT(chunk_entity_block->low_freq_entity_indices) - 1)
+    {
+        chunk_entity_block->next_chunk_entity_block =
+            (game_chunk_entity_block_t *)arena_alloc_default_aligned(
+                arena_allocator, sizeof(game_chunk_entity_block_t));
+    }
+    else
+    {
+        // TODO: Finish this!!
+    }
+
+    chunk_entity_block
+        ->low_freq_entity_indices[chunk_entity_block->low_freq_entity_count++] =
+        entity_low_freq_index;
+
+    return;
+}
+
 // Move a entity from the high freq array to the low freq array.
 // Returns low freq entity index.
 internal u32 make_entity_low_freq(game_world_t *game_world, u32 high_freq_index)
@@ -239,6 +342,7 @@ internal u32 make_entity_low_freq(game_world_t *game_world, u32 high_freq_index)
 
     return 0;
 }
+
 // Ref for understanding the BMP file format :
 // https://gibberlings3.github.io/iesdp/file_formats/ie_formats/bmp_v5.htm
 // Use pragma pack so that the padding of struct and all elements is 1 byte.
@@ -405,18 +509,27 @@ __declspec(dllexport) void game_update_and_render(
                     position.position = v2f64_add(
                         position.position, chunk_relative_tile_entity_offset);
 
-                    create_entity(&game_state->game_world,
-                                  game_entity_type_wall, position,
-                                  (v2f32_t){1.0f, 1.0f});
+                    u32 low_freq_entity_index = create_entity(
+                        &game_state->game_world, game_entity_type_wall,
+                        position, (v2f32_t){1.0f, 1.0f});
+
+                    place_entity_in_tile_chunk(
+                        &game_state->game_world, low_freq_entity_index,
+                        get_chunk_index_from_position(position),
+                        &game_state->memory_arena);
 
                     position.position = (v2f64_t){
                         (f64)(CHUNK_DIMENSION_IN_METERS_X - 1), (f64)tile_y};
                     position.position = v2f64_add(
                         position.position, chunk_relative_tile_entity_offset);
+                    low_freq_entity_index = create_entity(
+                        &game_state->game_world, game_entity_type_wall,
+                        position, (v2f32_t){1.0f, 1.0f});
 
-                    create_entity(&game_state->game_world,
-                                  game_entity_type_wall, position,
-                                  (v2f32_t){1.0f, 1.0f});
+                    place_entity_in_tile_chunk(
+                        &game_state->game_world, low_freq_entity_index,
+                        get_chunk_index_from_position(position),
+                        &game_state->memory_arena);
                 }
 
                 // Set the top and bottom border as obstacles.
@@ -453,13 +566,11 @@ __declspec(dllexport) void game_update_and_render(
 
     game_world_t *game_world = &game_state->game_world;
 
-    i64 camera_current_chunk_x =
-        floor_f64_to_i64((game_world->camera_world_position.position.x) /
-                         ((f64)CHUNK_DIMENSION_IN_METERS_X));
+    game_chunk_index_pair_t camera_chunk_index =
+        get_chunk_index_from_position(game_world->camera_world_position);
 
-    i64 camera_current_chunk_y =
-        floor_f64_to_i64((game_world->camera_world_position.position.y) /
-                         (f64)(CHUNK_DIMENSION_IN_METERS_Y));
+    i64 camera_current_chunk_x = camera_chunk_index.chunk_x;
+    i64 camera_current_chunk_y = camera_chunk_index.chunk_y;
 
     // Take the current camera position, and the high frequency entities that
     // are not in the same chunk as player, move it to low freq array.
@@ -476,21 +587,28 @@ __declspec(dllexport) void game_update_and_render(
         game_entity_t *high_freq_entity =
             &game_world->high_freq_entities[entity_index];
 
-        i64 entity_current_chunk_x =
-            floor_f64_to_i64((high_freq_entity->position.position.x) /
-                             ((f64)CHUNK_DIMENSION_IN_METERS_X));
+        game_chunk_index_pair_t entity_chunk_index =
+            get_chunk_index_from_position(high_freq_entity->position);
 
-        i64 entity_current_chunk_y =
-            floor_f64_to_i64((high_freq_entity->position.position.y) /
-                             (f64)(CHUNK_DIMENSION_IN_METERS_Y));
+        i64 entity_current_chunk_x = entity_chunk_index.chunk_x;
+        i64 entity_current_chunk_y = entity_chunk_index.chunk_y;
 
         if (entity_current_chunk_x != camera_current_chunk_x ||
             entity_current_chunk_y != camera_current_chunk_y)
         {
-            if (!make_entity_low_freq(game_world, entity_index))
+            u32 low_freq_entity_index =
+                make_entity_low_freq(game_world, entity_index);
+
+            if (!low_freq_entity_index)
             {
                 break;
             }
+
+            place_entity_in_tile_chunk(
+                game_world, low_freq_entity_index,
+                (game_chunk_index_pair_t){entity_current_chunk_x,
+                                          entity_current_chunk_y},
+                &game_state->memory_arena);
         }
         else
         {
@@ -506,13 +624,11 @@ __declspec(dllexport) void game_update_and_render(
         game_entity_t *low_freq_entity =
             &game_world->low_freq_entities[entity_index];
 
-        i64 entity_current_chunk_x =
-            floor_f64_to_i64((low_freq_entity->position.position.x) /
-                             ((f64)CHUNK_DIMENSION_IN_METERS_X));
+        game_chunk_index_pair_t entity_chunk_index =
+            get_chunk_index_from_position(low_freq_entity->position);
 
-        i64 entity_current_chunk_y =
-            floor_f64_to_i64((low_freq_entity->position.position.y) /
-                             (f64)(CHUNK_DIMENSION_IN_METERS_Y));
+        i64 entity_current_chunk_x = entity_chunk_index.chunk_x;
+        i64 entity_current_chunk_y = entity_chunk_index.chunk_y;
 
         if (entity_current_chunk_x == camera_current_chunk_x &&
             entity_current_chunk_y == camera_current_chunk_y)
@@ -711,13 +827,12 @@ __declspec(dllexport) void game_update_and_render(
 
     // If the player moves out of the current chunk, perform a smooth scroll on
     // the camera until it reaches the center of the players new chunk.
-    i64 player_current_chunk_x =
-        floor_f64_to_i64((player_entity->position.position.x) /
-                         ((f64)CHUNK_DIMENSION_IN_METERS_X));
+    //
+    game_chunk_index_pair_t player_chunk_index =
+        get_chunk_index_from_position(player_entity->position);
 
-    i64 player_current_chunk_y =
-        floor_f64_to_i64((player_entity->position.position.y) /
-                         (f64)(CHUNK_DIMENSION_IN_METERS_Y));
+    i64 player_current_chunk_x = player_chunk_index.chunk_x;
+    i64 player_current_chunk_y = player_chunk_index.chunk_y;
 
     f64 player_current_chunk_center_x =
         (f64)(player_current_chunk_x * CHUNK_DIMENSION_IN_METERS_X +
