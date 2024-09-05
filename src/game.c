@@ -120,6 +120,8 @@ internal u32 create_entity(game_world_t *game_world,
                            game_entity_type_t entity_type,
                            game_position_t position, v2f32_t dimension)
 {
+    ASSERT(game_world);
+
     ASSERT(game_world->low_freq_entity_count <
            ARRAY_COUNT(game_world->low_freq_entities));
 
@@ -193,7 +195,7 @@ internal u32 make_entity_high_freq(game_world_t *game_world, u32 low_freq_index)
     return 0;
 }
 
-// Place entity in the correct tile chunk.
+// Place entity in the correct tile chunk's entity block.
 void place_entity_in_tile_chunk(
     game_world_t *restrict game_world, u32 entity_low_freq_index,
     game_chunk_index_pair_t chunk_to_place_entity_in,
@@ -202,29 +204,13 @@ void place_entity_in_tile_chunk(
     i64 chunk_index_x = chunk_to_place_entity_in.chunk_x;
     i64 chunk_index_y = chunk_to_place_entity_in.chunk_y;
 
-    // If the entity is ALREADY in the chunk_to_place_in, no action is required
-    // to be taken.
-    u32 hash_value = (chunk_to_place_entity_in.chunk_x * 3 +
-                      chunk_to_place_entity_in.chunk_y * 66) &
-                     (ARRAY_COUNT(game_world->chunk_hash_map) - 1);
-
-    game_chunk_t *chunk = &game_world->chunk_hash_map[hash_value];
-    while (chunk && (chunk->chunk_index_x != chunk_index_x &&
-                     chunk->chunk_index_y != chunk_index_y))
-    {
-        chunk = chunk->next_chunk;
-    }
-
-    // If chunk is null, then it has NOT been set.
+    game_chunk_t *chunk =
+        get_game_chunk(game_world, chunk_index_x, chunk_index_y);
     ASSERT(chunk);
-    ASSERT(chunk->chunk_index_x == chunk_index_x &&
-           chunk->chunk_index_y == chunk_index_y);
 
     // Now, go over the entity blocks to see if entities low freq index is
     // already in it.
     game_chunk_entity_block_t *chunk_entity_block = chunk->chunk_entity_block;
-
-    b32 entity_in_chunk_already = 0;
 
     while (chunk_entity_block)
     {
@@ -233,9 +219,10 @@ void place_entity_in_tile_chunk(
              entity_index < chunk_entity_block->low_freq_entity_count;
              entity_index++)
         {
-            if (entity_index == entity_low_freq_index)
+            if (chunk_entity_block->low_freq_entity_indices[entity_index] ==
+                entity_low_freq_index)
             {
-                entity_in_chunk_already = 1;
+                return;
             }
         }
 
@@ -249,38 +236,175 @@ void place_entity_in_tile_chunk(
         }
     }
 
-    if (entity_in_chunk_already == 1)
-    {
-        return;
-    }
-
     // If entity is not in chunk, first remove entity from the previous chunk
     // (if it was in one), and add to new chunk.
+    game_chunk_index_pair_t current_entity_chunk_index_pair =
+        get_chunk_index_from_position(
+            game_world->low_freq_entities[entity_low_freq_index].position);
 
-    // TODO: Remove entity from what chunk it was already in
+    game_chunk_entity_block_t *chunk_current_entity_block =
+        get_game_chunk(game_world, current_entity_chunk_index_pair.chunk_x,
+                       current_entity_chunk_index_pair.chunk_y)
+            ->chunk_entity_block;
+
+    while (chunk_current_entity_block)
+    {
+        // TODO: Try moving this computation to SIMD.
+        for (u32 entity_index = 0;
+             entity_index < chunk_current_entity_block->low_freq_entity_count;
+             entity_index++)
+        {
+            if (chunk_current_entity_block
+                    ->low_freq_entity_indices[entity_index] ==
+                entity_low_freq_index)
+            {
+                // Take the last element from this chunk block, and put it
+                // in place of current elements low freq index entry.
+                chunk_current_entity_block
+                    ->low_freq_entity_indices[entity_index] =
+                    chunk_current_entity_block->low_freq_entity_indices
+                        [chunk_current_entity_block->low_freq_entity_count-- -
+                         1];
+                break;
+            }
+        }
+
+        chunk_current_entity_block =
+            chunk_current_entity_block->next_chunk_entity_block;
+    }
 
     // Add entity to new chunk.
     // Create entity block if it does not exist.
     // If the entity block is full, allocate a new one.
-    if (chunk_entity_block->low_freq_entity_count <
-        ARRAY_COUNT(chunk_entity_block->low_freq_entity_indices) - 1)
+    if (!(chunk_entity_block->low_freq_entity_count <
+          ARRAY_COUNT(chunk_entity_block->low_freq_entity_indices)))
     {
-        chunk_entity_block->next_chunk_entity_block =
+        game_chunk_entity_block_t *new_chunk_entity_block =
             (game_chunk_entity_block_t *)arena_alloc_default_aligned(
                 arena_allocator, sizeof(game_chunk_entity_block_t));
+
+        new_chunk_entity_block->low_freq_entity_indices
+            [new_chunk_entity_block->low_freq_entity_count++] =
+            entity_low_freq_index;
+        new_chunk_entity_block->next_chunk_entity_block = NULL;
+
+        chunk_entity_block->next_chunk_entity_block = new_chunk_entity_block;
     }
     else
     {
-        // TODO: Finish this!!
+        chunk_entity_block->low_freq_entity_indices
+            [chunk_entity_block->low_freq_entity_count++] =
+            entity_low_freq_index;
+        chunk_entity_block->next_chunk_entity_block = NULL;
     }
-
-    chunk_entity_block
-        ->low_freq_entity_indices[chunk_entity_block->low_freq_entity_count++] =
-        entity_low_freq_index;
 
     return;
 }
 
+void remove_entity_from_tile_chunk_low_freq_entities(
+    game_world_t *restrict game_world, u32 entity_low_freq_index,
+    game_chunk_index_pair_t chunk_to_place_entity_in,
+    arena_allocator_t *restrict arena_allocator)
+{
+    i64 chunk_index_x = chunk_to_place_entity_in.chunk_x;
+    i64 chunk_index_y = chunk_to_place_entity_in.chunk_y;
+
+    game_chunk_t *chunk =
+        get_game_chunk(game_world, chunk_index_x, chunk_index_y);
+    ASSERT(chunk);
+
+    // Now, go over the entity blocks to see if entities low freq index is
+    // already in it.
+    game_chunk_entity_block_t *chunk_entity_block = chunk->chunk_entity_block;
+
+    while (chunk_entity_block)
+    {
+        // TODO: Try moving this computation to SIMD.
+        for (u32 entity_index = 0;
+             entity_index < chunk_entity_block->low_freq_entity_count;
+             entity_index++)
+        {
+            if (chunk_entity_block->low_freq_entity_indices[entity_index] ==
+                entity_low_freq_index)
+            {
+                return;
+            }
+        }
+
+        if (chunk_entity_block->next_chunk_entity_block)
+        {
+            chunk_entity_block = chunk_entity_block->next_chunk_entity_block;
+        }
+        else
+        {
+            break;
+        }
+    }
+
+    // If entity is not in chunk, first remove entity from the previous chunk
+    // (if it was in one), and add to new chunk.
+    game_chunk_index_pair_t current_entity_chunk_index_pair =
+        get_chunk_index_from_position(
+            game_world->low_freq_entities[entity_low_freq_index].position);
+
+    game_chunk_entity_block_t *chunk_current_entity_block =
+        get_game_chunk(game_world, current_entity_chunk_index_pair.chunk_x,
+                       current_entity_chunk_index_pair.chunk_y)
+            ->chunk_entity_block;
+
+    while (chunk_current_entity_block)
+    {
+        // TODO: Try moving this computation to SIMD.
+        for (u32 entity_index = 0;
+             entity_index < chunk_current_entity_block->low_freq_entity_count;
+             entity_index++)
+        {
+            if (chunk_current_entity_block
+                    ->low_freq_entity_indices[entity_index] ==
+                entity_low_freq_index)
+            {
+                // Take the last element from this chunk block, and put it
+                // in place of current elements low freq index entry.
+                chunk_current_entity_block
+                    ->low_freq_entity_indices[entity_index] =
+                    chunk_current_entity_block->low_freq_entity_indices
+                        [chunk_current_entity_block->low_freq_entity_count-- -
+                         1];
+                break;
+            }
+        }
+
+        chunk_current_entity_block =
+            chunk_current_entity_block->next_chunk_entity_block;
+    }
+
+    // Add entity to new chunk.
+    // Create entity block if it does not exist.
+    // If the entity block is full, allocate a new one.
+    if (!(chunk_entity_block->low_freq_entity_count <
+          ARRAY_COUNT(chunk_entity_block->low_freq_entity_indices)))
+    {
+        game_chunk_entity_block_t *new_chunk_entity_block =
+            (game_chunk_entity_block_t *)arena_alloc_default_aligned(
+                arena_allocator, sizeof(game_chunk_entity_block_t));
+
+        new_chunk_entity_block->low_freq_entity_indices
+            [new_chunk_entity_block->low_freq_entity_count++] =
+            entity_low_freq_index;
+        new_chunk_entity_block->next_chunk_entity_block = NULL;
+
+        chunk_entity_block->next_chunk_entity_block = new_chunk_entity_block;
+    }
+    else
+    {
+        chunk_entity_block->low_freq_entity_indices
+            [chunk_entity_block->low_freq_entity_count++] =
+            entity_low_freq_index;
+        chunk_entity_block->next_chunk_entity_block = NULL;
+    }
+
+    return;
+}
 // Move a entity from the high freq array to the low freq array.
 // Returns low freq entity index.
 internal u32 make_entity_low_freq(game_world_t *game_world, u32 high_freq_index)
@@ -617,34 +741,50 @@ __declspec(dllexport) void game_update_and_render(
     }
     // Take the current camera position, and whatever is in the SAME chunk as
     // camera, make it high frequency.
+    // This computation is ONLY done for entities that are in the new chunk.
 
-    for (u32 entity_index = 0;
-         entity_index < game_world->low_freq_entity_count;)
     {
-        game_entity_t *low_freq_entity =
-            &game_world->low_freq_entities[entity_index];
 
-        game_chunk_index_pair_t entity_chunk_index =
-            get_chunk_index_from_position(low_freq_entity->position);
+        game_chunk_t *camera_current_chunk = get_game_chunk(
+            game_world, camera_current_chunk_x, camera_current_chunk_y);
 
-        i64 entity_current_chunk_x = entity_chunk_index.chunk_x;
-        i64 entity_current_chunk_y = entity_chunk_index.chunk_y;
+        game_chunk_entity_block_t *camera_current_chunk_entity_block =
+            camera_current_chunk->chunk_entity_block;
 
-        if (entity_current_chunk_x == camera_current_chunk_x &&
-            entity_current_chunk_y == camera_current_chunk_y)
+        while (camera_current_chunk_entity_block)
         {
-            // TODO: Is there a better way to handle this?
-            // If the high freq array is already full, just increase the entity
-            // index so that application will not lag and freeze in infinite
-            // loop.
-            if (!make_entity_high_freq(game_world, entity_index))
+            for (u32 entity_iterator = 0;
+                 entity_iterator <
+                 camera_current_chunk_entity_block->low_freq_entity_count;)
             {
-                break;
+                u32 entity_index =
+                    camera_current_chunk_entity_block
+                        ->low_freq_entity_indices[entity_iterator];
+
+                game_entity_t *low_freq_entity =
+                    &game_world->low_freq_entities[entity_index];
+
+                game_chunk_index_pair_t entity_chunk_index =
+                    get_chunk_index_from_position(low_freq_entity->position);
+
+                i64 entity_current_chunk_x = entity_chunk_index.chunk_x;
+                i64 entity_current_chunk_y = entity_chunk_index.chunk_y;
+
+                // TODO: Is there a better way to handle this?
+                // If the high freq array is already full, just increase the
+                // entity index so that application will not lag and freeze
+                // in infinite loop.
+                if (!make_entity_high_freq(game_world, entity_index))
+                {
+                    break;
+                }
+                else
+                {
+                    ++entity_iterator;
+                }
             }
-        }
-        else
-        {
-            ++entity_index;
+            camera_current_chunk_entity_block =
+                camera_current_chunk_entity_block->next_chunk_entity_block;
         }
     }
 
