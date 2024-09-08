@@ -66,11 +66,13 @@ typedef struct
 // possible. The player and entites around the player fall into this category.
 // low_freq_entities are those that are not updated as frequently as player.
 
+// Familiar is a entity that follows the player around.
 typedef enum
 {
     game_entity_type_none,
     game_entity_type_wall,
     game_entity_type_player,
+    game_entity_type_familiar,
 } game_entity_type_t;
 
 typedef enum
@@ -84,6 +86,7 @@ typedef struct
 {
     game_position_t position;
     v2f32_t dimension;
+    b32 collides;
     game_entity_type_t entity_type;
 } game_entity_t;
 
