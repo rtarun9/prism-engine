@@ -127,7 +127,6 @@ typedef struct
     game_entity_t low_freq_entities[8192];
     u32 low_freq_entity_count;
 
-    u32 index_of_last_created_entity;
     u32 player_high_freq_entity_index;
 
     game_chunk_t chunk_hash_map[256];
