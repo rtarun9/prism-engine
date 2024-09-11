@@ -244,7 +244,7 @@ void remove_low_freq_entity_from_chunk(
 internal u32 create_entity(game_world_t *restrict game_world,
                            game_entity_type_t entity_type,
                            game_position_t position, v2f32_t dimension,
-                           b32 collides,
+                           b32 collides, u32 total_hitpoints, u32 hitpoints,
                            arena_allocator_t *restrict arena_allocator,
                            b32 place_entity_in_chunk)
 {
@@ -258,6 +258,9 @@ internal u32 create_entity(game_world_t *restrict game_world,
 
     game_world->low_freq_entities[low_freq_entity_index].position = position;
     game_world->low_freq_entities[low_freq_entity_index].dimension = dimension;
+    game_world->low_freq_entities[low_freq_entity_index].total_hitpoints =
+        total_hitpoints;
+    game_world->low_freq_entities[low_freq_entity_index].hitpoints = hitpoints;
     game_world->low_freq_entities[low_freq_entity_index].collides = collides;
     game_world->low_freq_entities[low_freq_entity_index].entity_type =
         entity_type;
@@ -591,9 +594,10 @@ __declspec(dllexport) void game_update_and_render(
             (v2f64_t){(f64)CHUNK_DIMENSION_IN_METERS_X / 4.0f,
                       (f64)CHUNK_DIMENSION_IN_METERS_Y / 4.0f};
 
-        u32 player_low_freq_entity_index = create_entity(
-            &game_state->game_world, game_entity_type_player, player_position,
-            (v2f32_t){(f32)0.5f, (f32)0.5f}, 1, &game_state->memory_arena, 0);
+        u32 player_low_freq_entity_index =
+            create_entity(&game_state->game_world, game_entity_type_player,
+                          player_position, (v2f32_t){(f32)0.5f, (f32)0.5f}, 1,
+                          30, 3, &game_state->memory_arena, 0);
 
         u32 player_high_freq_entity_index =
             make_entity_high_freq(&game_state->game_world,
@@ -632,7 +636,7 @@ __declspec(dllexport) void game_update_and_render(
 
                     create_entity(&game_state->game_world,
                                   game_entity_type_wall, position,
-                                  (v2f32_t){1.0f, 1.0f}, 1,
+                                  (v2f32_t){1.0f, 1.0f}, 1, 0, 0,
                                   &game_state->memory_arena, 1);
 
                     position.position = (v2f64_t){
@@ -642,7 +646,7 @@ __declspec(dllexport) void game_update_and_render(
 
                     create_entity(&game_state->game_world,
                                   game_entity_type_wall, position,
-                                  (v2f32_t){1.0f, 1.0f}, 1,
+                                  (v2f32_t){1.0f, 1.0f}, 1, 0, 0,
                                   &game_state->memory_arena, 1);
                 }
 
@@ -662,7 +666,7 @@ __declspec(dllexport) void game_update_and_render(
 
                     create_entity(&game_state->game_world,
                                   game_entity_type_wall, position,
-                                  (v2f32_t){1.0f, 1.0f}, 1,
+                                  (v2f32_t){1.0f, 1.0f}, 1, 0, 0,
                                   &game_state->memory_arena, 1);
 
                     position.position = (v2f64_t){
@@ -672,7 +676,7 @@ __declspec(dllexport) void game_update_and_render(
 
                     create_entity(&game_state->game_world,
                                   game_entity_type_wall, position,
-                                  (v2f32_t){1.0f, 1.0f}, 1,
+                                  (v2f32_t){1.0f, 1.0f}, 1, 0, 0,
                                   &game_state->memory_arena, 1);
                 }
             }
@@ -680,7 +684,7 @@ __declspec(dllexport) void game_update_and_render(
         // Add a familiar entity.
         familiar_low_freq_entity_index = create_entity(
             &game_state->game_world, game_entity_type_familiar, player_position,
-            (v2f32_t){0.5f, 0.5f}, 0, &game_state->memory_arena, 1);
+            (v2f32_t){0.5f, 0.5f}, 0, 2, 2, &game_state->memory_arena, 1);
 
         game_state->is_initialized = 1;
     }
@@ -857,6 +861,20 @@ __declspec(dllexport) void game_update_and_render(
     game_entity_t *player_entity =
         &game_world
              ->high_freq_entities[game_world->player_high_freq_entity_index];
+
+    // Change the hit points based on input.
+    if (game_input->keyboard_state.key_up.is_key_down)
+    {
+        player_entity->hitpoints++;
+    }
+    else if (game_input->keyboard_state.key_down.is_key_down)
+    {
+        player_entity->hitpoints--;
+    }
+
+    player_entity->hitpoints = MAX(player_entity->hitpoints, 0);
+    player_entity->hitpoints =
+        MIN(player_entity->total_hitpoints, player_entity->hitpoints);
 
     player_new_position =
         v2f64_add(player_new_position, player_entity->position.position);
@@ -1096,10 +1114,14 @@ __declspec(dllexport) void game_update_and_render(
         switch (entity->entity_type)
         {
         case game_entity_type_player: {
-            draw_rectangle(game_framebuffer, rendering_offset,
-                           v2f32_scalar_multiply(entity->dimension,
-                                                 game_state->pixels_to_meters),
-                           1.0f, 1.0f, 1.0f, 0.5f);
+#if 0
+            draw_rectangle(
+                game_framebuffer,
+                (v2f32_t){rendering_offset.x, rendering_offset.y - 5.0f},
+                v2f32_scalar_multiply(entity->dimension,
+                                      game_state->pixels_to_meters),
+                1.0f, 1.0f, 1.0f, 0.5f);
+#endif
 
             // Player sprite position has to be such that the bottom middle
             // of the sprite coincides with the botom middle of player
@@ -1117,6 +1139,46 @@ __declspec(dllexport) void game_update_and_render(
 
             draw_texture(&game_state->player_texture, game_framebuffer,
                          player_sprite_bottom_left_offset);
+
+            // Draw hitpoints in the form of small rectangles below the player.
+            const f32 hitpoint_rect_width =
+                0.05f * game_state->pixels_to_meters;
+
+            v2f32_t center_hitpoint_rect_bottom_left_offset = {
+                rendering_offset.x +
+                    (entity->dimension.width / 2.0f) *
+                        game_state->pixels_to_meters -
+                    hitpoint_rect_width / 2.0f,
+                rendering_offset.y - hitpoint_rect_width * 3.0f};
+
+            const f32 space_between_hp_rects = 2.0f;
+
+            f32 offset_between_hp_rects =
+                (hitpoint_rect_width + space_between_hp_rects);
+
+            if (entity->hitpoints % 2 == 0)
+            {
+                center_hitpoint_rect_bottom_left_offset.x +=
+                    offset_between_hp_rects / 2.0f;
+            }
+
+            center_hitpoint_rect_bottom_left_offset.x -=
+                truncate_f32_to_i32(entity->hitpoints / 2.0f) *
+                offset_between_hp_rects;
+
+            for (u32 hp = 0; hp < entity->hitpoints; hp++)
+            {
+                v2f32_t hp_rendering_offset =
+                    center_hitpoint_rect_bottom_left_offset;
+
+                draw_rectangle(
+                    game_framebuffer, hp_rendering_offset,
+                    (v2f32_t){hitpoint_rect_width, hitpoint_rect_width}, 1.0f,
+                    0.0f, 0.0f, 1.0f);
+
+                center_hitpoint_rect_bottom_left_offset.x +=
+                    offset_between_hp_rects;
+            }
         }
         break;
 

@@ -22,6 +22,10 @@ typedef struct
     game_key_state_t key_a;
     game_key_state_t key_s;
     game_key_state_t key_d;
+
+    game_key_state_t key_up;
+    game_key_state_t key_down;
+
     game_key_state_t key_space;
 } game_keyboard_state_t;
 
@@ -88,6 +92,9 @@ typedef struct
     v2f32_t dimension;
     b32 collides;
     game_entity_type_t entity_type;
+
+    u32 total_hitpoints;
+    u32 hitpoints;
 } game_entity_t;
 
 // To partition entities spatially, a hash map of chunks is created, where

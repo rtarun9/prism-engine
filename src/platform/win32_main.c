@@ -602,6 +602,12 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
         game_input.keyboard_state.key_space = get_game_key_state(
             current_keyboard_state_ptr, previous_keyboard_state_ptr, VK_SPACE);
 
+        game_input.keyboard_state.key_up = get_game_key_state(
+            current_keyboard_state_ptr, previous_keyboard_state_ptr, VK_UP);
+
+        game_input.keyboard_state.key_down = get_game_key_state(
+            current_keyboard_state_ptr, previous_keyboard_state_ptr, VK_DOWN);
+
         game_key_state_t r_key_state = get_game_key_state(
             current_keyboard_state_ptr, previous_keyboard_state_ptr, 'R');
 
