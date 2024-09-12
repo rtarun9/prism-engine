@@ -275,6 +275,32 @@ internal u32 create_entity(game_world_t *restrict game_world,
     return low_freq_entity_index;
 }
 
+// A few specializations for create entity call.
+internal void create_projectile(game_world_t *restrict game_world,
+                                game_position_t position, v2f32_t dimension,
+                                v2f32_t velocity,
+                                arena_allocator_t *restrict arena_allocator)
+{
+    ASSERT(game_world);
+
+    ASSERT(game_world->low_freq_entity_count <
+           ARRAY_COUNT(game_world->low_freq_entities));
+
+    u32 low_freq_entity_index = game_world->low_freq_entity_count++;
+
+    game_world->low_freq_entities[low_freq_entity_index].position = position;
+    game_world->low_freq_entities[low_freq_entity_index].dimension = dimension;
+    game_world->low_freq_entities[low_freq_entity_index].total_hitpoints = 2;
+    game_world->low_freq_entities[low_freq_entity_index].hitpoints = 2;
+    game_world->low_freq_entities[low_freq_entity_index].collides = 1;
+    game_world->low_freq_entities[low_freq_entity_index].velocity = velocity;
+    game_world->low_freq_entities[low_freq_entity_index].entity_type =
+        game_entity_type_projectile;
+
+    place_low_freq_entity_in_chunk(game_world, low_freq_entity_index,
+                                   get_chunk_index_from_position(position),
+                                   arena_allocator);
+}
 // Move a entity from the low freq array to the high freq array.
 // Returns high freq entity index and result status (success or failiure).
 typedef struct
@@ -544,6 +570,358 @@ load_texture(platform_services_t *restrict platform_services,
     return texture;
 }
 
+// Update player position based on input.
+// Explanation of the movement logic.
+// Acceleration is instantaneous.
+// Integrating over the delta time, velocity becomes (previous velocity)
+// + a
+// * dt. Then, position = vt + 1/2 at^2.
+internal void update_player(game_input_t *restrict game_input,
+                            game_state_t *restrict game_state)
+{
+    game_world_t *game_world = &game_state->game_world;
+
+    game_entity_t *player_entity =
+        &game_world
+             ->high_freq_entities[game_world->player_high_freq_entity_index];
+
+    f32 player_movement_speed = game_input->dt_for_frame * 1600.0f;
+
+    v2f32_t player_acceleration = {0};
+
+    player_acceleration.x =
+        (game_input->keyboard_state.key_a.is_key_down ? -1.0f : 0.0f);
+
+    player_acceleration.x +=
+        (game_input->keyboard_state.key_d.is_key_down ? 1.0f : 0.0f);
+
+    player_acceleration.y =
+        (game_input->keyboard_state.key_w.is_key_down ? 1.0f : 0.0f);
+    player_acceleration.y +=
+        (game_input->keyboard_state.key_s.is_key_down ? -1.0f : 0.0f);
+
+    if (player_acceleration.x && player_acceleration.y)
+    {
+        // 1.0f / sqrt(2) = 0.70710.
+        player_acceleration =
+            v2f32_scalar_multiply(player_acceleration, 0.70710f);
+    }
+
+    player_acceleration =
+        v2f32_scalar_multiply(player_acceleration, player_movement_speed);
+
+    // Faking friction :)
+    player_acceleration =
+        v2f32_subtract(player_acceleration,
+                       v2f32_scalar_multiply(player_entity->velocity, 2.5f));
+
+    player_entity->velocity = v2f32_add(
+        player_entity->velocity,
+        v2f32_scalar_multiply(player_acceleration, game_input->dt_for_frame));
+
+    v2f64_t player_new_position = convert_to_v2f64(
+        v2f32_add(v2f32_scalar_multiply(player_entity->velocity,
+                                        game_input->dt_for_frame),
+                  v2f32_scalar_multiply(player_acceleration,
+                                        0.5f * game_input->dt_for_frame *
+                                            game_input->dt_for_frame)));
+
+    player_new_position =
+        v2f64_add(player_new_position, player_entity->position.position);
+
+    // Perform simple AABB collision.
+    rectangle_t player_rect = rectangle_from_center_and_origin(
+        convert_to_v2f32(v2f64_subtract(
+            player_new_position, game_world->camera_world_position.position)),
+        player_entity->dimension);
+
+    b32 player_collided = 0;
+    v2f32_t wall_normal = (v2f32_t){0.0f, 0.0f};
+
+    for (u32 entity_index = 0;
+         entity_index < game_world->high_freq_entity_count; entity_index++)
+    {
+        if (entity_index == game_world->player_high_freq_entity_index)
+        {
+            continue;
+        }
+
+        if (game_state->game_world.high_freq_entities[entity_index]
+                .entity_type == game_entity_state_does_not_exist)
+        {
+            continue;
+        }
+
+        game_entity_t *entity = &game_world->high_freq_entities[entity_index];
+
+        if (!entity->collides)
+        {
+            continue;
+        }
+
+        rectangle_t entity_rect = rectangle_from_center_and_origin(
+            convert_to_v2f32(
+                v2f64_subtract(entity->position.position,
+                               game_world->camera_world_position.position)),
+            entity->dimension);
+
+        b32 left_edge_collision =
+            (player_rect.bottom_left_x <
+             entity_rect.bottom_left_x + entity_rect.width);
+
+        b32 right_edge_collision =
+            (player_rect.bottom_left_x + player_rect.width >
+             entity_rect.bottom_left_x);
+
+        b32 top_edge_collision =
+            (player_rect.bottom_left_y + player_rect.height >
+             entity_rect.bottom_left_y);
+
+        b32 bottom_edge_collision =
+            (player_rect.bottom_left_y <
+             entity_rect.bottom_left_y + entity_rect.height);
+
+        if (left_edge_collision && right_edge_collision &&
+            bottom_edge_collision && top_edge_collision)
+        {
+            player_collided = 1;
+        }
+
+        if (player_collided)
+        {
+            f32 left_x_overlap = entity_rect.bottom_left_x + entity_rect.width -
+                                 player_rect.bottom_left_x;
+
+            f32 right_x_overlap = player_rect.bottom_left_x +
+                                  player_rect.width - entity_rect.bottom_left_x;
+
+            f32 top_y_overlap = player_rect.bottom_left_y + player_rect.height -
+                                entity_rect.bottom_left_y;
+
+            f32 bottom_y_overlap = entity_rect.bottom_left_y +
+                                   entity_rect.height -
+                                   player_rect.bottom_left_y;
+
+            f32 min_x_overlap = MIN(left_x_overlap, right_x_overlap);
+            f32 min_y_overlap = MIN(bottom_y_overlap, top_y_overlap);
+
+            if (min_x_overlap < min_y_overlap)
+            {
+                if (left_x_overlap < right_x_overlap)
+                {
+                    wall_normal = (v2f32_t){1.0f, 0.0f}; // Left edge collision
+                }
+                else
+                {
+                    wall_normal =
+                        (v2f32_t){-1.0f, 0.0f}; // Right edge collision
+                }
+            }
+            else
+            {
+                if (bottom_y_overlap < top_y_overlap)
+                {
+                    wall_normal =
+                        (v2f32_t){0.0f, 1.0f}; // Bottom edge collision
+                }
+                else
+                {
+                    wall_normal = (v2f32_t){0.0f, -1.0f}; // Top edge collision
+                }
+            }
+            break;
+        }
+    }
+
+    if (!player_collided)
+    {
+        player_entity->position.position = player_new_position;
+    }
+    else
+    {
+        // Modify player velocity taking into account reflection.
+        v2f32_t velocity_vector_to_wall_projection = v2f32_scalar_multiply(
+            wall_normal, v2f32_dot(wall_normal, player_entity->velocity));
+
+        v2f32_t reflection_vector = v2f32_scalar_multiply(
+            v2f32_subtract(player_entity->velocity,
+                           v2f32_scalar_multiply(
+                               velocity_vector_to_wall_projection, 2.0f)),
+            0.9f);
+
+        player_entity->velocity = reflection_vector;
+    }
+}
+
+internal void update_projectiles(game_state_t *restrict game_state)
+{
+    game_world_t *game_world = &game_state->game_world;
+
+    // NOTE: For now, the velocity of projectile is instantaneous. Acceleration
+    // need not be computed.
+
+    for (u32 projectile_entity_index = 0;
+         projectile_entity_index < game_world->high_freq_entity_count;
+         projectile_entity_index++)
+    {
+        game_entity_t *projectile_entity =
+            &game_world->high_freq_entities[projectile_entity_index];
+
+        if (projectile_entity->entity_type != game_entity_type_projectile)
+        {
+            continue;
+        }
+
+        v2f64_t projectile_new_position =
+            v2f64_add(projectile_entity->position.position,
+                      convert_to_v2f64(projectile_entity->velocity));
+
+        // Perform simple AABB collision.
+        rectangle_t projectile_rect = rectangle_from_center_and_origin(
+            convert_to_v2f32(
+                v2f64_subtract(projectile_new_position,
+                               game_world->camera_world_position.position)),
+            projectile_entity->dimension);
+
+        b32 projectile_collided = 0;
+        v2f32_t wall_normal = (v2f32_t){0.0f, 0.0f};
+
+        for (u32 entity_index = 0;
+             entity_index < game_world->high_freq_entity_count; entity_index++)
+        {
+            if (entity_index == projectile_entity_index)
+            {
+                continue;
+            }
+
+            game_entity_t *entity =
+                &game_world->high_freq_entities[entity_index];
+
+            if (!entity->collides)
+            {
+                continue;
+            }
+
+            rectangle_t entity_rect = rectangle_from_center_and_origin(
+                convert_to_v2f32(
+                    v2f64_subtract(entity->position.position,
+                                   game_world->camera_world_position.position)),
+                entity->dimension);
+
+            b32 left_edge_collision =
+                (projectile_rect.bottom_left_x <
+                 entity_rect.bottom_left_x + entity_rect.width);
+
+            b32 right_edge_collision =
+                (projectile_rect.bottom_left_x + projectile_rect.width >
+                 entity_rect.bottom_left_x);
+
+            b32 top_edge_collision =
+                (projectile_rect.bottom_left_y + projectile_rect.height >
+                 entity_rect.bottom_left_y);
+
+            b32 bottom_edge_collision =
+                (projectile_rect.bottom_left_y <
+                 entity_rect.bottom_left_y + entity_rect.height);
+
+            if (left_edge_collision && right_edge_collision &&
+                bottom_edge_collision && top_edge_collision)
+            {
+                projectile_collided = 1;
+                entity->hitpoints--;
+
+                projectile_entity->hitpoints--;
+
+                if (projectile_entity->hitpoints == 0)
+                {
+                    // Remove projectile from high freq entity set.
+                    if (game_world->high_freq_entity_count == 1)
+                    {
+                        game_world->high_freq_entity_count--;
+                    }
+                    else
+                    {
+                        game_world
+                            ->high_freq_entities[projectile_entity_index] =
+                            game_world->high_freq_entities
+                                [game_world->high_freq_entity_count-- - 1];
+                    }
+                }
+            }
+
+            if (projectile_collided)
+            {
+                f32 left_x_overlap = entity_rect.bottom_left_x +
+                                     entity_rect.width -
+                                     projectile_rect.bottom_left_x;
+
+                f32 right_x_overlap = projectile_rect.bottom_left_x +
+                                      projectile_rect.width -
+                                      entity_rect.bottom_left_x;
+
+                f32 top_y_overlap = projectile_rect.bottom_left_y +
+                                    projectile_rect.height -
+                                    entity_rect.bottom_left_y;
+
+                f32 bottom_y_overlap = entity_rect.bottom_left_y +
+                                       entity_rect.height -
+                                       projectile_rect.bottom_left_y;
+
+                f32 min_x_overlap = MIN(left_x_overlap, right_x_overlap);
+                f32 min_y_overlap = MIN(bottom_y_overlap, top_y_overlap);
+
+                if (min_x_overlap < min_y_overlap)
+                {
+                    if (left_x_overlap < right_x_overlap)
+                    {
+                        wall_normal =
+                            (v2f32_t){1.0f, 0.0f}; // Left edge collision
+                    }
+                    else
+                    {
+                        wall_normal =
+                            (v2f32_t){-1.0f, 0.0f}; // Right edge collision
+                    }
+                }
+                else
+                {
+                    if (bottom_y_overlap < top_y_overlap)
+                    {
+                        wall_normal =
+                            (v2f32_t){0.0f, 1.0f}; // Bottom edge collision
+                    }
+                    else
+                    {
+                        wall_normal =
+                            (v2f32_t){0.0f, -1.0f}; // Top edge collision
+                    }
+                }
+                break;
+            }
+        }
+
+        if (!projectile_collided)
+        {
+            projectile_entity->position.position = projectile_new_position;
+        }
+        else
+        {
+            // Modify projectile velocity taking into account reflection.
+            v2f32_t velocity_vector_to_wall_projection = v2f32_scalar_multiply(
+                wall_normal,
+                v2f32_dot(wall_normal, projectile_entity->velocity));
+
+            v2f32_t reflection_vector = v2f32_scalar_multiply(
+                v2f32_subtract(projectile_entity->velocity,
+                               v2f32_scalar_multiply(
+                                   velocity_vector_to_wall_projection, 2.0f)),
+                0.9f);
+
+            projectile_entity->velocity = reflection_vector;
+        }
+    }
+}
+
 __declspec(dllexport) void game_update_and_render(
     game_memory_t *restrict game_memory_allocator,
     game_framebuffer_t *restrict game_framebuffer,
@@ -811,57 +1189,14 @@ __declspec(dllexport) void game_update_and_render(
         ++entity_index;
     }
 
-    // Update player position based on input.
-    // Explanation of the movement logic.
-    // Acceleration is instantaneous.
-    // Integrating over the delta time, velocity becomes (previous velocity)
-    // + a
-    // * dt. Then, position = vt + 1/2 at^2.
-    f32 player_movement_speed = game_input->dt_for_frame * 1600.0f;
-
-    v2f32_t player_acceleration = {0};
-
-    player_acceleration.x =
-        (game_input->keyboard_state.key_a.is_key_down ? -1.0f : 0.0f);
-
-    player_acceleration.x +=
-        (game_input->keyboard_state.key_d.is_key_down ? 1.0f : 0.0f);
-
-    player_acceleration.y =
-        (game_input->keyboard_state.key_w.is_key_down ? 1.0f : 0.0f);
-    player_acceleration.y +=
-        (game_input->keyboard_state.key_s.is_key_down ? -1.0f : 0.0f);
-
-    if (player_acceleration.x && player_acceleration.y)
-    {
-        // 1.0f / sqrt(2) = 0.70710.
-        player_acceleration =
-            v2f32_scalar_multiply(player_acceleration, 0.70710f);
-    }
-
-    player_acceleration =
-        v2f32_scalar_multiply(player_acceleration, player_movement_speed);
-
-    // Faking friction :)
-    player_acceleration = v2f32_subtract(
-        player_acceleration,
-        v2f32_scalar_multiply(game_state->player_velocity, 2.5f));
-
-    game_state->player_velocity = v2f32_add(
-        game_state->player_velocity,
-        v2f32_scalar_multiply(player_acceleration, game_input->dt_for_frame));
-
-    v2f64_t player_new_position = convert_to_v2f64(
-        v2f32_add(v2f32_scalar_multiply(game_state->player_velocity,
-                                        game_input->dt_for_frame),
-                  v2f32_scalar_multiply(player_acceleration,
-                                        0.5f * game_input->dt_for_frame *
-                                            game_input->dt_for_frame)));
-
     game_entity_t *player_entity =
         &game_world
              ->high_freq_entities[game_world->player_high_freq_entity_index];
 
+    update_player(game_input, game_state);
+    update_projectiles(game_state);
+
+#if 0
     // Change the hit points based on input.
     if (game_input->keyboard_state.key_up.is_key_down)
     {
@@ -871,137 +1206,66 @@ __declspec(dllexport) void game_update_and_render(
     {
         player_entity->hitpoints--;
     }
+#endif
 
     player_entity->hitpoints = MAX(player_entity->hitpoints, 0);
     player_entity->hitpoints =
         MIN(player_entity->total_hitpoints, player_entity->hitpoints);
 
-    player_new_position =
-        v2f64_add(player_new_position, player_entity->position.position);
+    v2f64_t player_new_position = player_entity->position.position;
 
-    // Perform simple AABB collision.
-    rectangle_t player_rect = rectangle_from_center_and_origin(
-        convert_to_v2f32(v2f64_subtract(
-            player_new_position, game_world->camera_world_position.position)),
-        player_entity->dimension);
-
-    b32 player_collided = 0;
-    v2f32_t wall_normal = (v2f32_t){0.0f, 0.0f};
-
-    for (u32 entity_index = 0;
-         entity_index < game_world->high_freq_entity_count; entity_index++)
+    // Create projectile based on player input.
+    if (game_input->keyboard_state.key_right.is_key_down &&
+        game_input->keyboard_state.key_right.state_changed)
     {
-        if (entity_index == game_world->player_high_freq_entity_index)
-        {
-            continue;
-        }
 
-        if (game_state->game_world.high_freq_entities[entity_index]
-                .entity_type == game_entity_state_does_not_exist)
-        {
-            continue;
-        }
+        game_position_t projectile_game_position = {0};
+        projectile_game_position.position =
+            v2f64_add(player_new_position, (v2f64_t){0.5f, 0.0f});
 
-        game_entity_t *entity = &game_world->high_freq_entities[entity_index];
-
-        if (!entity->collides)
-        {
-            continue;
-        }
-
-        rectangle_t entity_rect = rectangle_from_center_and_origin(
-            convert_to_v2f32(
-                v2f64_subtract(entity->position.position,
-                               game_world->camera_world_position.position)),
-            entity->dimension);
-
-        b32 left_edge_collision =
-            (player_rect.bottom_left_x <
-             entity_rect.bottom_left_x + entity_rect.width);
-
-        b32 right_edge_collision =
-            (player_rect.bottom_left_x + player_rect.width >
-             entity_rect.bottom_left_x);
-
-        b32 top_edge_collision =
-            (player_rect.bottom_left_y + player_rect.height >
-             entity_rect.bottom_left_y);
-
-        b32 bottom_edge_collision =
-            (player_rect.bottom_left_y <
-             entity_rect.bottom_left_y + entity_rect.height);
-
-        if (left_edge_collision && right_edge_collision &&
-            bottom_edge_collision && top_edge_collision)
-        {
-            player_collided = 1;
-        }
-
-        if (player_collided)
-        {
-            f32 left_x_overlap = entity_rect.bottom_left_x + entity_rect.width -
-                                 player_rect.bottom_left_x;
-
-            f32 right_x_overlap = player_rect.bottom_left_x +
-                                  player_rect.width - entity_rect.bottom_left_x;
-
-            f32 top_y_overlap = player_rect.bottom_left_y + player_rect.height -
-                                entity_rect.bottom_left_y;
-
-            f32 bottom_y_overlap = entity_rect.bottom_left_y +
-                                   entity_rect.height -
-                                   player_rect.bottom_left_y;
-
-            f32 min_x_overlap = MIN(left_x_overlap, right_x_overlap);
-            f32 min_y_overlap = MIN(bottom_y_overlap, top_y_overlap);
-
-            if (min_x_overlap < min_y_overlap)
-            {
-                if (left_x_overlap < right_x_overlap)
-                {
-                    wall_normal = (v2f32_t){1.0f, 0.0f}; // Left edge collision
-                }
-                else
-                {
-                    wall_normal =
-                        (v2f32_t){-1.0f, 0.0f}; // Right edge collision
-                }
-            }
-            else
-            {
-                if (bottom_y_overlap < top_y_overlap)
-                {
-                    wall_normal =
-                        (v2f32_t){0.0f, 1.0f}; // Bottom edge collision
-                }
-                else
-                {
-                    wall_normal = (v2f32_t){0.0f, -1.0f}; // Top edge collision
-                }
-            }
-            break;
-        }
+        create_projectile(game_world, projectile_game_position,
+                          (v2f32_t){0.2f, 0.2f}, (v2f32_t){1.0f, 0.0f},
+                          &game_state->memory_arena);
     }
 
-    if (!player_collided)
+    else if (game_input->keyboard_state.key_left.is_key_down &&
+             game_input->keyboard_state.key_left.state_changed)
     {
-        player_entity->position.position = player_new_position;
-    }
-    else
-    {
-        // Modify player velocity taking into account reflection.
-        v2f32_t velocity_vector_to_wall_projection = v2f32_scalar_multiply(
-            wall_normal, v2f32_dot(wall_normal, game_state->player_velocity));
 
-        v2f32_t reflection_vector = v2f32_scalar_multiply(
-            v2f32_subtract(game_state->player_velocity,
-                           v2f32_scalar_multiply(
-                               velocity_vector_to_wall_projection, 2.0f)),
-            0.9f);
+        game_position_t projectile_game_position = {0};
+        projectile_game_position.position =
+            v2f64_add(player_new_position, (v2f64_t){-0.5f, 0.0f});
 
-        game_state->player_velocity = reflection_vector;
+        create_projectile(game_world, projectile_game_position,
+                          (v2f32_t){0.2f, 0.2f}, (v2f32_t){-1.0f, 0.0f},
+                          &game_state->memory_arena);
     }
 
+    if (game_input->keyboard_state.key_up.is_key_down &&
+        game_input->keyboard_state.key_up.state_changed)
+    {
+
+        game_position_t projectile_game_position = {0};
+        projectile_game_position.position =
+            v2f64_add(player_new_position, (v2f64_t){0.0f, 0.5f});
+
+        create_projectile(game_world, projectile_game_position,
+                          (v2f32_t){0.2f, 0.2f}, (v2f32_t){0.0f, 1.0f},
+                          &game_state->memory_arena);
+    }
+
+    else if (game_input->keyboard_state.key_down.is_key_down &&
+             game_input->keyboard_state.key_down.state_changed)
+    {
+
+        game_position_t projectile_game_position = {0};
+        projectile_game_position.position =
+            v2f64_add(player_new_position, (v2f64_t){0.0f, -0.5f});
+
+        create_projectile(game_world, projectile_game_position,
+                          (v2f32_t){0.2f, 0.2f}, (v2f32_t){0.0f, -1.0f},
+                          &game_state->memory_arena);
+    }
     // Take the familiar entity, and make it follow the player.
     for (u32 entity_index = 0;
          entity_index < game_world->high_freq_entity_count; entity_index++)
@@ -1140,9 +1404,9 @@ __declspec(dllexport) void game_update_and_render(
             draw_texture(&game_state->player_texture, game_framebuffer,
                          player_sprite_bottom_left_offset);
 
-            // Draw hitpoints in the form of small rectangles below the player.
-            const f32 hitpoint_rect_width =
-                0.05f * game_state->pixels_to_meters;
+            // Draw hitpoints in the form of small rectangles below the
+            // player.
+            const f32 hitpoint_rect_width = 0.1f * game_state->pixels_to_meters;
 
             v2f32_t center_hitpoint_rect_bottom_left_offset = {
                 rendering_offset.x +
@@ -1151,7 +1415,7 @@ __declspec(dllexport) void game_update_and_render(
                     hitpoint_rect_width / 2.0f,
                 rendering_offset.y - hitpoint_rect_width * 3.0f};
 
-            const f32 space_between_hp_rects = 2.0f;
+            const f32 space_between_hp_rects = 4.0f;
 
             f32 offset_between_hp_rects =
                 (hitpoint_rect_width + space_between_hp_rects);
@@ -1195,6 +1459,14 @@ __declspec(dllexport) void game_update_and_render(
                            v2f32_scalar_multiply(entity->dimension,
                                                  game_state->pixels_to_meters),
                            0.4f, 0.1f, 0.4f, 0.5f);
+        }
+        break;
+
+        case game_entity_type_projectile: {
+            draw_rectangle(game_framebuffer, rendering_offset,
+                           v2f32_scalar_multiply(entity->dimension,
+                                                 game_state->pixels_to_meters),
+                           0.0f, 1.0f, 0.0f, 1.0f);
         }
         break;
 

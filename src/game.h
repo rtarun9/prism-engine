@@ -25,6 +25,8 @@ typedef struct
 
     game_key_state_t key_up;
     game_key_state_t key_down;
+    game_key_state_t key_left;
+    game_key_state_t key_right;
 
     game_key_state_t key_space;
 } game_keyboard_state_t;
@@ -77,6 +79,7 @@ typedef enum
     game_entity_type_wall,
     game_entity_type_player,
     game_entity_type_familiar,
+    game_entity_type_projectile,
 } game_entity_type_t;
 
 typedef enum
@@ -92,6 +95,7 @@ typedef struct
     v2f32_t dimension;
     b32 collides;
     game_entity_type_t entity_type;
+    v2f32_t velocity;
 
     u32 total_hitpoints;
     u32 hitpoints;
@@ -186,7 +190,6 @@ typedef struct
 {
 
     f32 pixels_to_meters;
-    v2f32_t player_velocity;
 
     game_world_t game_world;
     arena_allocator_t memory_arena;

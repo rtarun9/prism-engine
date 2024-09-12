@@ -453,7 +453,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
 
     ShowWindow(window_handle, SW_SHOW);
 
-    win32_resize_bitmap(1920 / 4, 1080 / 4);
+    win32_resize_bitmap(1920 / 2, 1080 / 2);
 
     // RDTSC stands for read timestamp counter. Each processes will have a
     // time stamp counter, which basically increments after each clock
@@ -607,6 +607,12 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
 
         game_input.keyboard_state.key_down = get_game_key_state(
             current_keyboard_state_ptr, previous_keyboard_state_ptr, VK_DOWN);
+
+        game_input.keyboard_state.key_left = get_game_key_state(
+            current_keyboard_state_ptr, previous_keyboard_state_ptr, VK_LEFT);
+
+        game_input.keyboard_state.key_right = get_game_key_state(
+            current_keyboard_state_ptr, previous_keyboard_state_ptr, VK_RIGHT);
 
         game_key_state_t r_key_state = get_game_key_state(
             current_keyboard_state_ptr, previous_keyboard_state_ptr, 'R');
