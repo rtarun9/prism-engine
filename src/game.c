@@ -1,4 +1,5 @@
 #include "game.h"
+#include "common.h"
 
 global_variable game_counter_t *global_game_counters = NULL;
 
@@ -7,6 +8,8 @@ global_variable game_counter_t *global_game_counters = NULL;
 
 #include "custom_intrinsics.h"
 #include "custom_math.h"
+
+#include "random.h"
 
 #include "renderer.h"
 
@@ -824,9 +827,31 @@ internal void update_projectiles(game_state_t *restrict game_state)
                 (projectile_rect.bottom_left_y <
                  entity_rect.bottom_left_y + entity_rect.height);
 
+            // To check if projectile is to be deleted, either it has to hit
+            // player, or can hit a wall UNTIL projectiles HP becomes zero.
             if (left_edge_collision && right_edge_collision &&
                 bottom_edge_collision && top_edge_collision)
             {
+                // If entity is player or enemy, remove the projectile from
+                // entirely.
+                if (entity->entity_type == game_entity_type_player)
+                {
+                    entity->hitpoints--;
+                    // Remove projectile from high freq entity set.
+                    if (game_world->high_freq_entity_count == 1)
+                    {
+                        game_world->high_freq_entity_count--;
+                    }
+                    else
+                    {
+                        game_world
+                            ->high_freq_entities[projectile_entity_index] =
+                            game_world->high_freq_entities
+                                [game_world->high_freq_entity_count-- - 1];
+                    }
+                    break;
+                }
+
                 projectile_collided = 1;
                 entity->hitpoints--;
 
@@ -1064,8 +1089,31 @@ __declspec(dllexport) void game_update_and_render(
             &game_state->game_world, game_entity_type_familiar, player_position,
             (v2f32_t){0.5f, 0.5f}, 0, 2, 2, &game_state->memory_arena, 1);
 
+        // Create splat textures.
+        game_state->splat_textures[0] =
+            load_texture(platform_services, "../assets/splat01.bmp",
+                         &game_state->memory_arena);
+
+        game_state->splat_textures[1] =
+            load_texture(platform_services, "../assets/splat02.bmp",
+                         &game_state->memory_arena);
+
+        game_state->splat_textures[2] =
+            load_texture(platform_services, "../assets/splat03.bmp",
+                         &game_state->memory_arena);
+
+        game_state->splat_textures[3] =
+            load_texture(platform_services, "../assets/splat04.bmp",
+                         &game_state->memory_arena);
+
         game_state->is_initialized = 1;
     }
+
+    // Clear screen.
+    draw_rectangle(
+        game_framebuffer, (v2f32_t){0.0f, 0.0f},
+        (v2f32_t){(f32)game_framebuffer->width, (f32)game_framebuffer->height},
+        0.0f, 0.0f, 0.0f, 1.0f);
 
     game_world_t *game_world = &(game_state->game_world);
 
@@ -1074,6 +1122,44 @@ __declspec(dllexport) void game_update_and_render(
 
     i64 camera_current_chunk_x = camera_chunk_index.chunk_x;
     i64 camera_current_chunk_y = camera_chunk_index.chunk_y;
+
+    // NOTE: For testing purposes only
+    // draw a random number of splats in screen space. A function will be later
+    // created where splats are randomly created taking into consideration chunk
+    // dimensions.
+    for (i32 splat_index = 0; splat_index < 2500; splat_index++)
+    {
+        u32 random_number =
+            random_number_table[splat_index % ARRAY_COUNT(random_number_table)];
+
+        u32 random_number2 =
+            random_number_table[splat_index * 4 %
+                                ARRAY_COUNT(random_number_table)];
+
+        u32 splat_texture_index =
+            random_number_table[splat_index %
+                                ARRAY_COUNT(random_number_table)] %
+            ARRAY_COUNT(game_state->splat_textures);
+
+        // Take this random number and modify it so that it creates a position
+        // the splat can be positioned in (within the current chunk).
+        f32 x = random_number * 1.0f / MAX_RANDOM_NUMBER_VALUE;
+        f32 y = random_number2 * 1.0f / MAX_RANDOM_NUMBER_VALUE;
+
+        // Random math for allowing splats to have different alpha values.
+        f32 alpha_multiplier = x - y > 0 ? x - y : y - x;
+        alpha_multiplier *= 1.0f / (x + y);
+
+        v2f32_t splat_bottom_left_position_screen_space =
+            (v2f32_t){game_framebuffer->width / 2.0f +
+                          (x - 0.5f) * game_framebuffer->width,
+                      (y - 0.5f) * game_framebuffer->height +
+                          game_framebuffer->height / 2.0f};
+
+        draw_texture(&game_state->splat_textures[splat_texture_index],
+                     game_framebuffer, splat_bottom_left_position_screen_space,
+                     alpha_multiplier);
+    }
 
     // Take the current camera position, and whatever is in the SAME chunk
     // as camera, make it high frequency. This computation is ONLY done for
@@ -1224,7 +1310,7 @@ __declspec(dllexport) void game_update_and_render(
             v2f64_add(player_new_position, (v2f64_t){0.5f, 0.0f});
 
         create_projectile(game_world, projectile_game_position,
-                          (v2f32_t){0.2f, 0.2f}, (v2f32_t){1.0f, 0.0f},
+                          (v2f32_t){0.2f, 0.2f}, (v2f32_t){0.1f, 0.0f},
                           &game_state->memory_arena);
     }
 
@@ -1237,7 +1323,7 @@ __declspec(dllexport) void game_update_and_render(
             v2f64_add(player_new_position, (v2f64_t){-0.5f, 0.0f});
 
         create_projectile(game_world, projectile_game_position,
-                          (v2f32_t){0.2f, 0.2f}, (v2f32_t){-1.0f, 0.0f},
+                          (v2f32_t){0.2f, 0.2f}, (v2f32_t){-0.1f, 0.0f},
                           &game_state->memory_arena);
     }
 
@@ -1250,7 +1336,7 @@ __declspec(dllexport) void game_update_and_render(
             v2f64_add(player_new_position, (v2f64_t){0.0f, 0.5f});
 
         create_projectile(game_world, projectile_game_position,
-                          (v2f32_t){0.2f, 0.2f}, (v2f32_t){0.0f, 1.0f},
+                          (v2f32_t){0.2f, 0.2f}, (v2f32_t){0.0f, 0.1f},
                           &game_state->memory_arena);
     }
 
@@ -1263,7 +1349,7 @@ __declspec(dllexport) void game_update_and_render(
             v2f64_add(player_new_position, (v2f64_t){0.0f, -0.5f});
 
         create_projectile(game_world, projectile_game_position,
-                          (v2f32_t){0.2f, 0.2f}, (v2f32_t){0.0f, -1.0f},
+                          (v2f32_t){0.2f, 0.2f}, (v2f32_t){0.0f, -0.1f},
                           &game_state->memory_arena);
     }
     // Take the familiar entity, and make it follow the player.
@@ -1289,12 +1375,6 @@ __declspec(dllexport) void game_update_and_render(
             }
         }
     }
-
-    // Clear screen.
-    draw_rectangle(
-        game_framebuffer, (v2f32_t){0.0f, 0.0f},
-        (v2f32_t){(f32)game_framebuffer->width, (f32)game_framebuffer->height},
-        0.0f, 0.0f, 0.0f, 1.0f);
 
     // If the player moves out of the current chunk, perform a smooth scroll
     // on the camera until it reaches the center of the players new chunk.
@@ -1402,7 +1482,7 @@ __declspec(dllexport) void game_update_and_render(
                 game_state->player_texture.width / 8.0f;
 
             draw_texture(&game_state->player_texture, game_framebuffer,
-                         player_sprite_bottom_left_offset);
+                         player_sprite_bottom_left_offset, 1.0f);
 
             // Draw hitpoints in the form of small rectangles below the
             // player.
@@ -1430,7 +1510,7 @@ __declspec(dllexport) void game_update_and_render(
                 truncate_f32_to_i32(entity->hitpoints / 2.0f) *
                 offset_between_hp_rects;
 
-            for (u32 hp = 0; hp < entity->hitpoints; hp++)
+            for (i32 hp = 0; hp < entity->hitpoints; hp++)
             {
                 v2f32_t hp_rendering_offset =
                     center_hitpoint_rect_bottom_left_offset;

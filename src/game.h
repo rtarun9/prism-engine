@@ -97,8 +97,9 @@ typedef struct
     game_entity_type_t entity_type;
     v2f32_t velocity;
 
-    u32 total_hitpoints;
-    u32 hitpoints;
+    // Hitpoint data is represented by integers to make checks for hp < 0 easy.
+    i32 total_hitpoints;
+    i32 hitpoints;
 } game_entity_t;
 
 // To partition entities spatially, a hash map of chunks is created, where
@@ -195,6 +196,8 @@ typedef struct
     arena_allocator_t memory_arena;
 
     game_texture_t player_texture;
+
+    game_texture_t splat_textures[4];
 
     game_counter_t game_counters[game_total_counters];
 

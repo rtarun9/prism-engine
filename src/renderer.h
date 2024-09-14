@@ -112,7 +112,7 @@ internal void draw_rectangle(game_framebuffer_t *game_framebuffer,
 
 internal void draw_texture(game_texture_t *restrict texture,
                            game_framebuffer_t *restrict framebuffer,
-                           v2f32_t bottom_left_offset)
+                           v2f32_t bottom_left_offset, f32 alpha_multiplier)
 {
     i32 min_x = round_f32_to_i32(bottom_left_offset.x);
     i32 min_y = round_f32_to_i32(bottom_left_offset.y);
@@ -185,7 +185,8 @@ internal void draw_texture(game_texture_t *restrict texture,
         {
             u32 pixel_color = *source++;
 
-            u8 src_alpha = (u8)(pixel_color >> texture->alpha_shift);
+            u8 src_alpha =
+                (u8)((pixel_color >> texture->alpha_shift) * alpha_multiplier);
 
             u8 src_red = (u8)(pixel_color >> texture->red_shift);
             u8 src_green = (u8)(pixel_color >> texture->green_shift);
