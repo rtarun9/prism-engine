@@ -40,7 +40,7 @@ game_chunk_t *get_game_chunk(game_world_t *game_world, i64 chunk_index_x,
     // to be powers of 2. This will make getting a valid index from hash value
     // easy, as power of 2 - 1 gives a mask.
     u32 hash_value = (chunk_index_x * 3 + chunk_index_y * 66) &
-                     (ARRAY_COUNT(game_world->chunk_hash_map) - 1);
+                     (ARRAY_SIZE(game_world->chunk_hash_map) - 1);
 
     game_chunk_t *chunk = &game_world->chunk_hash_map[hash_value];
     while (chunk && (chunk->chunk_index_x != chunk_index_x &&
@@ -70,7 +70,7 @@ game_chunk_t *set_game_chunk(game_world_t *game_world, i64 chunk_index_x,
     // to be powers of 2. This will make getting a valid index from hash value
     // easy, as power of 2 - 1 gives a mask.
     u32 hash_value = (chunk_index_x * 3 + chunk_index_y * 66) &
-                     (ARRAY_COUNT(game_world->chunk_hash_map) - 1);
+                     (ARRAY_SIZE(game_world->chunk_hash_map) - 1);
 
     game_chunk_t *chunk = &game_world->chunk_hash_map[hash_value];
 
@@ -164,7 +164,7 @@ void place_low_freq_entity_in_chunk(
     // Create entity block if it does not exist.
     // If the entity block is full, allocate a new one.
     if (!(chunk_entity_block->low_freq_entity_count <
-          ARRAY_COUNT(chunk_entity_block->low_freq_entity_indices)))
+          ARRAY_SIZE(chunk_entity_block->low_freq_entity_indices)))
     {
         // TODO: Maintain a linked list of free entity blocks and re-use. Alloc
         // from memory arena only if that linked list is totally empty.
@@ -255,7 +255,7 @@ internal u32 create_entity(game_world_t *restrict game_world,
     ASSERT(game_world);
 
     ASSERT(game_world->low_freq_entity_count <
-           ARRAY_COUNT(game_world->low_freq_entities));
+           ARRAY_SIZE(game_world->low_freq_entities));
 
     u32 low_freq_entity_index = game_world->low_freq_entity_count++;
 
@@ -287,7 +287,7 @@ internal void create_projectile(game_world_t *restrict game_world,
     ASSERT(game_world);
 
     ASSERT(game_world->low_freq_entity_count <
-           ARRAY_COUNT(game_world->low_freq_entities));
+           ARRAY_SIZE(game_world->low_freq_entities));
 
     u32 low_freq_entity_index = game_world->low_freq_entity_count++;
 
@@ -320,7 +320,7 @@ make_entity_high_freq(game_world_t *game_world, u32 low_freq_index)
     // (ii) Move the low freq entity out of the array, and take the last element
     // in that array and place it in the previous low freq entities slot.
 
-    ASSERT(low_freq_index < ARRAY_COUNT(game_world->low_freq_entities));
+    ASSERT(low_freq_index < ARRAY_SIZE(game_world->low_freq_entities));
 
     make_entity_high_freq_result_t result = {0};
 
@@ -328,7 +328,7 @@ make_entity_high_freq(game_world_t *game_world, u32 low_freq_index)
         &game_world->low_freq_entities[low_freq_index];
 
     if (game_world->high_freq_entity_count <
-        ARRAY_COUNT(game_world->high_freq_entities))
+        ARRAY_SIZE(game_world->high_freq_entities))
     {
 
         u32 high_freq_entity_index = game_world->high_freq_entity_count++;
@@ -435,14 +435,14 @@ make_entity_low_freq(game_world_t *game_world, u32 high_freq_index)
     // element in that array and place it in the previous high freq entities
     // slot.
 
-    ASSERT(high_freq_index < ARRAY_COUNT(game_world->high_freq_entities));
+    ASSERT(high_freq_index < ARRAY_SIZE(game_world->high_freq_entities));
     make_entity_low_freq_result_t result = {0};
 
     game_entity_t *high_freq_entity =
         &game_world->high_freq_entities[high_freq_index];
 
     if (game_world->low_freq_entity_count <
-        ARRAY_COUNT(game_world->low_freq_entities))
+        ARRAY_SIZE(game_world->low_freq_entities))
     {
 
         u32 low_freq_entity_index = game_world->low_freq_entity_count++;
@@ -566,7 +566,7 @@ load_texture(platform_services_t *restrict platform_services,
     texture.height = bmp_header->height;
     texture.width = bmp_header->width;
 
-    texture.pointer = texture_pointer;
+    texture.memory = texture_pointer;
 
     platform_services->platform_close_file(bmp_read_result.file_content_buffer);
 
@@ -949,7 +949,7 @@ internal void update_projectiles(game_state_t *restrict game_state)
 
 __declspec(dllexport) void game_update_and_render(
     game_memory_t *restrict game_memory_allocator,
-    game_framebuffer_t *restrict game_framebuffer,
+    game_texture_t *restrict game_framebuffer,
     game_input_t *restrict game_input,
     platform_services_t *restrict platform_services)
 {
@@ -957,7 +957,7 @@ __declspec(dllexport) void game_update_and_render(
     local_persist u32 familiar_high_freq_entity_index = 0;
 
     ASSERT(game_input != NULL);
-    ASSERT(game_framebuffer->backbuffer_memory != NULL);
+    ASSERT(game_framebuffer->memory != NULL);
     ASSERT(game_memory_allocator->permanent_memory != NULL);
     ASSERT(platform_services != NULL);
 
@@ -1106,6 +1106,48 @@ __declspec(dllexport) void game_update_and_render(
             load_texture(platform_services, "../assets/splat04.bmp",
                          &game_state->memory_arena);
 
+        game_state->game_world.cached_ground_splat.memory =
+            (u32 *)arena_alloc_array(&game_state->memory_arena,
+                                     game_framebuffer->width *
+                                         game_framebuffer->height,
+                                     sizeof(u32), sizeof(u32));
+
+        game_state->game_world.cached_ground_splat.width =
+            game_framebuffer->width;
+        game_state->game_world.cached_ground_splat.height =
+            game_framebuffer->height;
+        game_state->game_world.cached_ground_splat.alpha_shift = 24;
+        game_state->game_world.cached_ground_splat.red_shift = 16;
+        game_state->game_world.cached_ground_splat.green_shift = 8;
+        game_state->game_world.cached_ground_splat.blue_shift = 0;
+
+        game_state->seed = init_random_seed(0);
+
+        // NOTE: For testing purposes only
+        // draw a random number of splats in screen space. A function will be
+        // later created where splats are randomly created taking into
+        // consideration chunk dimensions.
+        for (i32 splat_index = 0; splat_index < 1000000; splat_index++)
+        {
+            f32 x = get_next_random_normal(&game_state->seed);
+            f32 y = get_next_random_normal(&game_state->seed);
+
+            u32 splat_texture_index = get_next_random_in_range(
+                &game_state->seed, 0u, ARRAY_SIZE(game_state->splat_textures));
+
+            f32 alpha_multiplier = get_next_random_normal(&game_state->seed);
+
+            v2f32_t splat_bottom_left_position_screen_space =
+                (v2f32_t){game_framebuffer->width / 2.0f +
+                              (x - 0.5f) * game_framebuffer->width,
+                          (y - 0.5f) * game_framebuffer->height +
+                              game_framebuffer->height / 2.0f};
+
+            draw_texture(&game_state->splat_textures[splat_texture_index],
+                         &game_state->game_world.cached_ground_splat,
+                         splat_bottom_left_position_screen_space,
+                         alpha_multiplier);
+        }
         game_state->is_initialized = 1;
     }
 
@@ -1115,6 +1157,10 @@ __declspec(dllexport) void game_update_and_render(
         (v2f32_t){(f32)game_framebuffer->width, (f32)game_framebuffer->height},
         0.0f, 0.0f, 0.0f, 1.0f);
 
+    // Draw the cached splat texture.
+    draw_texture(&game_state->game_world.cached_ground_splat, game_framebuffer,
+                 (v2f32_t){0.0f, 0.0f}, 1.0f);
+
     game_world_t *game_world = &(game_state->game_world);
 
     game_chunk_index_pair_t camera_chunk_index =
@@ -1122,44 +1168,6 @@ __declspec(dllexport) void game_update_and_render(
 
     i64 camera_current_chunk_x = camera_chunk_index.chunk_x;
     i64 camera_current_chunk_y = camera_chunk_index.chunk_y;
-
-    // NOTE: For testing purposes only
-    // draw a random number of splats in screen space. A function will be later
-    // created where splats are randomly created taking into consideration chunk
-    // dimensions.
-    for (i32 splat_index = 0; splat_index < 2500; splat_index++)
-    {
-        u32 random_number =
-            random_number_table[splat_index % ARRAY_COUNT(random_number_table)];
-
-        u32 random_number2 =
-            random_number_table[splat_index * 4 %
-                                ARRAY_COUNT(random_number_table)];
-
-        u32 splat_texture_index =
-            random_number_table[splat_index %
-                                ARRAY_COUNT(random_number_table)] %
-            ARRAY_COUNT(game_state->splat_textures);
-
-        // Take this random number and modify it so that it creates a position
-        // the splat can be positioned in (within the current chunk).
-        f32 x = random_number * 1.0f / MAX_RANDOM_NUMBER_VALUE;
-        f32 y = random_number2 * 1.0f / MAX_RANDOM_NUMBER_VALUE;
-
-        // Random math for allowing splats to have different alpha values.
-        f32 alpha_multiplier = x - y > 0 ? x - y : y - x;
-        alpha_multiplier *= 1.0f / (x + y);
-
-        v2f32_t splat_bottom_left_position_screen_space =
-            (v2f32_t){game_framebuffer->width / 2.0f +
-                          (x - 0.5f) * game_framebuffer->width,
-                      (y - 0.5f) * game_framebuffer->height +
-                          game_framebuffer->height / 2.0f};
-
-        draw_texture(&game_state->splat_textures[splat_texture_index],
-                     game_framebuffer, splat_bottom_left_position_screen_space,
-                     alpha_multiplier);
-    }
 
     // Take the current camera position, and whatever is in the SAME chunk
     // as camera, make it high frequency. This computation is ONLY done for

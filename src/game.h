@@ -8,6 +8,7 @@
 
 #include "arena_allocator.h"
 #include "custom_math.h"
+#include "random.h"
 #include "renderer.h"
 
 typedef struct
@@ -144,6 +145,10 @@ typedef struct
     game_chunk_t chunk_hash_map[256];
 
     game_position_t camera_world_position;
+
+    // Rather than rendering splats each time, render it once and cache the
+    // result.
+    game_texture_t cached_ground_splat;
 } game_world_t;
 
 typedef struct
@@ -201,6 +206,8 @@ typedef struct
 
     game_counter_t game_counters[game_total_counters];
 
+    random_seed_t seed;
+
     u32 is_initialized;
 } game_state_t;
 
@@ -240,7 +247,7 @@ typedef struct
 
 #define FUNC_GAME_UPDATE_AND_RENDER(name)                                      \
     void name(game_memory_t *restrict game_memory_allocator,                   \
-              game_framebuffer_t *restrict game_framebuffer,                   \
+              game_texture_t *restrict game_framebuffer,                       \
               game_input_t *restrict game_input,                               \
               platform_services_t *restrict platform_services)
 

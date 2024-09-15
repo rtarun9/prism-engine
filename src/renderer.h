@@ -4,13 +4,8 @@
 #include "custom_math.h"
 
 // NOTE: The bottom left corner is 0, 0.
-typedef struct
-{
-    u8 *backbuffer_memory;
-    u32 width;
-    u32 height;
-} game_framebuffer_t;
-
+// The platform layer uses a game_texture_t as a framebuffer. This makes
+// rendering to offscreen buffers and the main framebuffer very convinient.
 typedef struct
 {
     // Given a pixel color, use the following shift values using (pixel >>
@@ -23,11 +18,11 @@ typedef struct
     u32 height;
     u32 width;
 
-    u32 *pointer;
+    u32 *memory;
 } game_texture_t;
 
 // NOTE: The offsets are framebuffer relative!!
-internal void draw_rectangle(game_framebuffer_t *game_framebuffer,
+internal void draw_rectangle(game_texture_t *game_framebuffer,
                              v2f32_t bottom_left_offset,
                              v2f32_t width_and_height, f32 normalized_red,
                              f32 normalized_green, f32 normalized_blue,
@@ -70,8 +65,8 @@ internal void draw_rectangle(game_framebuffer_t *game_framebuffer,
         max_y = game_framebuffer->height - 1;
     }
 
-    u32 *row = (u32 *)(game_framebuffer->backbuffer_memory + min_x * 4 +
-                       min_y * 4 * game_framebuffer->width);
+    u32 *row = (u32 *)(game_framebuffer->memory + min_x +
+                       min_y * game_framebuffer->width);
 
     i32 pitch = game_framebuffer->width;
 
@@ -111,7 +106,7 @@ internal void draw_rectangle(game_framebuffer_t *game_framebuffer,
 }
 
 internal void draw_texture(game_texture_t *restrict texture,
-                           game_framebuffer_t *restrict framebuffer,
+                           game_texture_t *restrict framebuffer,
                            v2f32_t bottom_left_offset, f32 alpha_multiplier)
 {
     i32 min_x = round_f32_to_i32(bottom_left_offset.x);
@@ -171,9 +166,9 @@ internal void draw_texture(game_texture_t *restrict texture,
         blit_height -= clip_y;
     }
 
-    u32 *source = texture->pointer;
-    u32 *destination_row = ((u32 *)framebuffer->backbuffer_memory + (u32)min_x +
-                            framebuffer->width * min_y);
+    u32 *source = texture->memory;
+    u32 *destination_row =
+        ((u32 *)framebuffer->memory + (u32)min_x + framebuffer->width * min_y);
 
     u32 destination_pitch = framebuffer->width;
 

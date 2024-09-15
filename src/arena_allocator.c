@@ -35,6 +35,8 @@ internal u8 *arena_alloc_array(arena_allocator_t *arena, size_t num_elements,
 
     if (base_ptr_relative_offset + size > arena->size)
     {
+        ASSERT("Could not allocate memory as per requirement");
+        ASSERT(0);
         return NULL;
     }
 

@@ -469,7 +469,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
     // Allocate memory upfront.
     win32_memory_t allocated_memory = {0};
     allocated_memory.permanent_memory_size =
-        get_nearest_multiple(MEGABYTE(1), win32_minimum_large_page_size);
+        get_nearest_multiple(MEGABYTE(64), win32_minimum_large_page_size);
     allocated_memory.permanent_memory = VirtualAlloc(
         NULL, allocated_memory.permanent_memory_size,
         MEM_COMMIT | MEM_RESERVE | MEM_LARGE_PAGES, PAGE_READWRITE);
@@ -619,9 +619,9 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
 
         // NOTE: Should rendering only be done when WM_PAINT is
         // called, or should it be called in the game loop always?
-        game_framebuffer_t game_framebuffer = {0};
-        game_framebuffer.backbuffer_memory =
-            g_offscreen_framebuffer.backbuffer_memory;
+        game_texture_t game_framebuffer = {0};
+        game_framebuffer.memory =
+            (u32 *)g_offscreen_framebuffer.backbuffer_memory;
         game_framebuffer.width =
             g_offscreen_framebuffer.bitmap_info_header.biWidth;
         game_framebuffer.height =

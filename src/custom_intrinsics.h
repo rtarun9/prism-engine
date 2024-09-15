@@ -41,6 +41,11 @@ inline i32 floor_f32_to_i32(const f32 value)
     return (i32)floor_f32(value);
 }
 
+inline u32 floor_f32_to_u32(const f32 value)
+{
+    return (u32)floor_f32(value);
+}
+
 inline f32 square_root_f32(const f32 value)
 {
     __m128 sq_root_value = _mm_sqrt_ps(_mm_set_ps1(value));
