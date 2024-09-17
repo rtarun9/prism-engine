@@ -138,6 +138,15 @@ inline f64 v2f64_len_sq(const v2f64_t a)
     return (f64)square_root_f64(v2f64_len(a));
 }
 
+inline v2f64_t v2f64_normalize(const v2f64_t a)
+{
+    v2f64_t result = a;
+    f64 len = v2f64_len_sq(a);
+    result = v2f64_scalar_multiply(a, 1.0f / len);
+
+    return result;
+}
+
 inline v2f64_t convert_to_v2f64(const v2f32_t a)
 {
     v2f64_t result = {0};

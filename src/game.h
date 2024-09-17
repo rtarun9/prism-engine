@@ -102,6 +102,14 @@ typedef struct
     // Hitpoint data is represented by integers to make checks for hp < 0 easy.
     i32 total_hitpoints;
     i32 hitpoints;
+
+    // This data is only for enemies. Will be moved out later when a proper
+    // entity component system is in place.
+
+    // time_left_to_shoot (when negative) will be used to check when player must
+    // be shot. If the time is less than 0, it is reset to delay_between_shots.
+    f32 time_left_to_shoot;
+    f32 delay_between_shots;
 } game_entity_t;
 
 // To partition entities spatially, a hash map of chunks is created, where

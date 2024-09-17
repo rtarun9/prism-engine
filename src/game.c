@@ -304,6 +304,39 @@ internal void create_projectile(game_world_t *restrict game_world,
                                    get_chunk_index_from_position(position),
                                    arena_allocator);
 }
+
+internal void create_enemy(game_world_t *restrict game_world,
+                           game_position_t position, v2f32_t dimension,
+                           f32 delay_between_shots, i32 total_hitpoints,
+                           arena_allocator_t *restrict arena_allocator)
+{
+    ASSERT(game_world);
+
+    ASSERT(game_world->low_freq_entity_count <
+           ARRAY_SIZE(game_world->low_freq_entities));
+
+    u32 low_freq_entity_index = game_world->low_freq_entity_count++;
+
+    game_world->low_freq_entities[low_freq_entity_index].position = position;
+    game_world->low_freq_entities[low_freq_entity_index].dimension = dimension;
+    game_world->low_freq_entities[low_freq_entity_index].total_hitpoints =
+        total_hitpoints;
+    game_world->low_freq_entities[low_freq_entity_index].hitpoints =
+        total_hitpoints;
+    game_world->low_freq_entities[low_freq_entity_index].collides = 1;
+    game_world->low_freq_entities[low_freq_entity_index].entity_type =
+        game_entity_type_enemy;
+
+    game_world->low_freq_entities[low_freq_entity_index].delay_between_shots =
+        delay_between_shots;
+    game_world->low_freq_entities[low_freq_entity_index].time_left_to_shoot =
+        delay_between_shots;
+
+    place_low_freq_entity_in_chunk(game_world, low_freq_entity_index,
+                                   get_chunk_index_from_position(position),
+                                   arena_allocator);
+}
+
 // Move a entity from the low freq array to the high freq array.
 // Returns high freq entity index and result status (success or failiure).
 typedef struct
@@ -584,21 +617,45 @@ internal void update_enemies(game_state_t *game_state, f32 dt_for_frame)
 
     f32 enemy_movement_speed = dt_for_frame * 100.0f;
 
-    for (u32 entity_index = 0;
-         entity_index < game_world->high_freq_entity_count; entity_index++)
+    for (u32 enemy_entity_index = 0;
+         enemy_entity_index < game_world->high_freq_entity_count;
+         enemy_entity_index++)
     {
-        if (game_state->game_world.high_freq_entities[entity_index]
+        if (game_state->game_world.high_freq_entities[enemy_entity_index]
                 .entity_type != game_entity_type_enemy)
         {
             continue;
         }
 
-        game_entity_t *entity = &game_world->high_freq_entities[entity_index];
+        game_entity_t *enemy =
+            &game_world->high_freq_entities[enemy_entity_index];
+
+        v2f64_t enemy_to_player_vector = v2f64_subtract(
+            player_entity->position.position, enemy->position.position);
+
+        enemy->time_left_to_shoot -= dt_for_frame;
+
+        if (enemy->time_left_to_shoot < 0.0f)
+        {
+            game_position_t projectile_game_position = {0};
+
+            // Which direction should the bullet be shot in?
+
+            projectile_game_position.position =
+                v2f64_add(enemy->position.position,
+                          v2f64_normalize(enemy_to_player_vector));
+
+            create_projectile(
+                game_world, projectile_game_position, (v2f32_t){0.2f, 0.2f},
+                v2f32_scalar_multiply(
+                    convert_to_v2f32(v2f64_normalize(enemy_to_player_vector)),
+                    0.1f),
+                &game_state->memory_arena);
+
+            enemy->time_left_to_shoot = enemy->delay_between_shots;
+        }
 
         // Code to move enemy towards the player.
-        v2f64_t enemy_to_player_vector = v2f64_subtract(
-            player_entity->position.position, entity->position.position);
-
         v2f32_t enemy_acceleration = {0};
 
         enemy_acceleration = convert_to_v2f32(enemy_to_player_vector);
@@ -613,57 +670,149 @@ internal void update_enemies(game_state_t *game_state, f32 dt_for_frame)
         enemy_acceleration =
             v2f32_scalar_multiply(enemy_acceleration, enemy_movement_speed);
 
-        entity->velocity =
-            v2f32_add(entity->velocity,
+        enemy->velocity =
+            v2f32_add(enemy->velocity,
                       v2f32_scalar_multiply(enemy_acceleration, dt_for_frame));
 
         v2f64_t new_position = convert_to_v2f64(v2f32_add(
-            v2f32_scalar_multiply(entity->velocity, dt_for_frame),
+            v2f32_scalar_multiply(enemy->velocity, dt_for_frame),
             v2f32_scalar_multiply(enemy_acceleration,
                                   0.5f * dt_for_frame * dt_for_frame)));
 
-        new_position = v2f64_add(new_position, entity->position.position);
+        new_position = v2f64_add(new_position, enemy->position.position);
 
         // AABB collision to check if entity can actually move to new_position.
-        //
-        rectangle_t entity_rect = rectangle_from_center_and_origin(
+        rectangle_t enemy_rect = rectangle_from_center_and_origin(
             convert_to_v2f32(
-                v2f64_subtract(entity->position.position,
+                v2f64_subtract(enemy->position.position,
                                game_world->camera_world_position.position)),
-            entity->dimension);
+            enemy->dimension);
 
-        // TODO: Check for proper collision.
-        b32 enemy_collided = 0;
-
-        b32 left_edge_collision =
-            (entity_rect.bottom_left_x <
-             entity_rect.bottom_left_x + entity_rect.width);
-
-        b32 right_edge_collision =
-            (entity_rect.bottom_left_x + entity_rect.width >
-             entity_rect.bottom_left_x);
-
-        b32 top_edge_collision =
-            (entity_rect.bottom_left_y + entity_rect.height >
-             entity_rect.bottom_left_y);
-
-        b32 bottom_edge_collision =
-            (entity_rect.bottom_left_y <
-             entity_rect.bottom_left_y + entity_rect.height);
-
-#if 0
-        if (left_edge_collision && right_edge_collision &&
-            bottom_edge_collision && top_edge_collision)
+        for (u32 entity_index = 0;
+             entity_index < game_world->high_freq_entity_count; entity_index++)
         {
-            enemy_collided = 1;
-        }
+            b32 enemy_collided = 0;
 
-        if (!enemy_collided)
-        {
-            player_entity->position.position = new_position;
+            v2f32_t wall_normal = (v2f32_t){0.0f, 0.0f};
+
+            if (entity_index == enemy_entity_index)
+            {
+                continue;
+            }
+
+            if (game_state->game_world.high_freq_entities[entity_index]
+                    .entity_type == game_entity_state_does_not_exist)
+            {
+                continue;
+            }
+
+            game_entity_t *entity =
+                &game_world->high_freq_entities[entity_index];
+
+            if (!entity->collides)
+            {
+                continue;
+            }
+
+            rectangle_t entity_rect = rectangle_from_center_and_origin(
+                convert_to_v2f32(
+                    v2f64_subtract(entity->position.position,
+                                   game_world->camera_world_position.position)),
+                entity->dimension);
+
+            b32 left_edge_collision =
+                (enemy_rect.bottom_left_x <
+                 entity_rect.bottom_left_x + entity_rect.width);
+
+            b32 right_edge_collision =
+                (enemy_rect.bottom_left_x + enemy_rect.width >
+                 entity_rect.bottom_left_x);
+
+            b32 top_edge_collision =
+                (enemy_rect.bottom_left_y + enemy_rect.height >
+                 entity_rect.bottom_left_y);
+
+            b32 bottom_edge_collision =
+                (enemy_rect.bottom_left_y <
+                 entity_rect.bottom_left_y + entity_rect.height);
+
+            if (left_edge_collision && right_edge_collision &&
+                bottom_edge_collision && top_edge_collision)
+            {
+                enemy_collided = 1;
+            }
+
+            if (enemy_collided)
+            {
+                f32 left_x_overlap = entity_rect.bottom_left_x +
+                                     entity_rect.width -
+                                     enemy_rect.bottom_left_x;
+
+                f32 right_x_overlap = enemy_rect.bottom_left_x +
+                                      enemy_rect.width -
+                                      entity_rect.bottom_left_x;
+
+                f32 top_y_overlap = enemy_rect.bottom_left_y +
+                                    enemy_rect.height -
+                                    entity_rect.bottom_left_y;
+
+                f32 bottom_y_overlap = entity_rect.bottom_left_y +
+                                       entity_rect.height -
+                                       enemy_rect.bottom_left_y;
+
+                f32 min_x_overlap = MIN(left_x_overlap, right_x_overlap);
+                f32 min_y_overlap = MIN(bottom_y_overlap, top_y_overlap);
+
+                if (min_x_overlap < min_y_overlap)
+                {
+                    if (left_x_overlap < right_x_overlap)
+                    {
+                        wall_normal =
+                            (v2f32_t){1.0f, 0.0f}; // Left edge collision
+                    }
+                    else
+                    {
+                        wall_normal =
+                            (v2f32_t){-1.0f, 0.0f}; // Right edge collision
+                    }
+                }
+                else
+                {
+                    if (bottom_y_overlap < top_y_overlap)
+                    {
+                        wall_normal =
+                            (v2f32_t){0.0f, 1.0f}; // Bottom edge collision
+                    }
+                    else
+                    {
+                        wall_normal =
+                            (v2f32_t){0.0f, -1.0f}; // Top edge collision
+                    }
+                }
+            }
+
+            if (!enemy_collided)
+            {
+                enemy->position.position = new_position;
+            }
+            else
+            {
+                // Modify enemy velocity taking into account reflection.
+                v2f32_t velocity_vector_to_wall_projection =
+                    v2f32_scalar_multiply(
+                        wall_normal, v2f32_dot(wall_normal, enemy->velocity));
+
+                v2f32_t reflection_vector = v2f32_scalar_multiply(
+                    v2f32_subtract(
+                        enemy->velocity,
+                        v2f32_scalar_multiply(
+                            velocity_vector_to_wall_projection, 2.0f)),
+                    0.9f);
+
+                enemy->velocity = reflection_vector;
+                break;
+            }
         }
-#endif
-        entity->position.position = new_position;
     }
 }
 
@@ -967,8 +1116,8 @@ internal void update_projectiles(game_state_t *restrict game_state)
                     }
                 }
 
-                // If projectile hit a enemy, remove enemy from high freq array
-                // if HP is zero.
+                // If projectile hit a enemy, remove enemy from high freq
+                // array if HP is zero.
                 if (entity->hitpoints == 0 &&
                     entity->entity_type == game_entity_type_enemy)
                 {
@@ -1207,9 +1356,10 @@ __declspec(dllexport) void game_update_and_render(
                 enemy_position.position = v2f64_add(
                     enemy_position.position, chunk_relative_tile_entity_offset);
 
-                create_entity(&game_state->game_world, game_entity_type_enemy,
-                              enemy_position, (v2f32_t){0.6f, 0.6f}, 1, 3, 3,
-                              &game_state->memory_arena, 1);
+                create_enemy(&game_state->game_world, enemy_position,
+                             (v2f32_t){0.6f, 0.6f},
+                             game_input->dt_for_frame * 30, 3,
+                             &game_state->memory_arena);
             }
         }
         // Add a familiar entity.
@@ -1253,7 +1403,7 @@ __declspec(dllexport) void game_update_and_render(
         // draw a random number of splats in screen space. A function will
         // be later created where splats are randomly created taking into
         // consideration chunk dimensions.
-        for (i32 splat_index = 0; splat_index < 1000000; splat_index++)
+        for (i32 splat_index = 0; splat_index < 10; splat_index++)
         {
             f32 x = get_next_random_normal(&game_state->seed);
             f32 y = get_next_random_normal(&game_state->seed);
