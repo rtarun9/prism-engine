@@ -81,6 +81,7 @@ typedef enum
     game_entity_type_player,
     game_entity_type_familiar,
     game_entity_type_projectile,
+    game_entity_type_enemy,
 } game_entity_type_t;
 
 typedef enum

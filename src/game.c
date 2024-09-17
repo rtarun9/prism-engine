@@ -573,6 +573,100 @@ load_texture(platform_services_t *restrict platform_services,
     return texture;
 }
 
+// Enemies move near the player and shoot projectiles at player.
+internal void update_enemies(game_state_t *game_state, f32 dt_for_frame)
+{
+    game_world_t *game_world = &game_state->game_world;
+
+    game_entity_t *player_entity =
+        &game_world
+             ->high_freq_entities[game_world->player_high_freq_entity_index];
+
+    f32 enemy_movement_speed = dt_for_frame * 100.0f;
+
+    for (u32 entity_index = 0;
+         entity_index < game_world->high_freq_entity_count; entity_index++)
+    {
+        if (game_state->game_world.high_freq_entities[entity_index]
+                .entity_type != game_entity_type_enemy)
+        {
+            continue;
+        }
+
+        game_entity_t *entity = &game_world->high_freq_entities[entity_index];
+
+        // Code to move enemy towards the player.
+        v2f64_t enemy_to_player_vector = v2f64_subtract(
+            player_entity->position.position, entity->position.position);
+
+        v2f32_t enemy_acceleration = {0};
+
+        enemy_acceleration = convert_to_v2f32(enemy_to_player_vector);
+
+        if (enemy_acceleration.x && enemy_acceleration.y)
+        {
+            // 1.0f / sqrt(2) = 0.70710.
+            enemy_acceleration =
+                v2f32_scalar_multiply(enemy_acceleration, 0.70710f);
+        }
+
+        enemy_acceleration =
+            v2f32_scalar_multiply(enemy_acceleration, enemy_movement_speed);
+
+        entity->velocity =
+            v2f32_add(entity->velocity,
+                      v2f32_scalar_multiply(enemy_acceleration, dt_for_frame));
+
+        v2f64_t new_position = convert_to_v2f64(v2f32_add(
+            v2f32_scalar_multiply(entity->velocity, dt_for_frame),
+            v2f32_scalar_multiply(enemy_acceleration,
+                                  0.5f * dt_for_frame * dt_for_frame)));
+
+        new_position = v2f64_add(new_position, entity->position.position);
+
+        // AABB collision to check if entity can actually move to new_position.
+        //
+        rectangle_t entity_rect = rectangle_from_center_and_origin(
+            convert_to_v2f32(
+                v2f64_subtract(entity->position.position,
+                               game_world->camera_world_position.position)),
+            entity->dimension);
+
+        // TODO: Check for proper collision.
+        b32 enemy_collided = 0;
+
+        b32 left_edge_collision =
+            (entity_rect.bottom_left_x <
+             entity_rect.bottom_left_x + entity_rect.width);
+
+        b32 right_edge_collision =
+            (entity_rect.bottom_left_x + entity_rect.width >
+             entity_rect.bottom_left_x);
+
+        b32 top_edge_collision =
+            (entity_rect.bottom_left_y + entity_rect.height >
+             entity_rect.bottom_left_y);
+
+        b32 bottom_edge_collision =
+            (entity_rect.bottom_left_y <
+             entity_rect.bottom_left_y + entity_rect.height);
+
+#if 0
+        if (left_edge_collision && right_edge_collision &&
+            bottom_edge_collision && top_edge_collision)
+        {
+            enemy_collided = 1;
+        }
+
+        if (!enemy_collided)
+        {
+            player_entity->position.position = new_position;
+        }
+#endif
+        entity->position.position = new_position;
+    }
+}
+
 // Update player position based on input.
 // Explanation of the movement logic.
 // Acceleration is instantaneous.
@@ -760,8 +854,8 @@ internal void update_projectiles(game_state_t *restrict game_state)
 {
     game_world_t *game_world = &game_state->game_world;
 
-    // NOTE: For now, the velocity of projectile is instantaneous. Acceleration
-    // need not be computed.
+    // NOTE: For now, the velocity of projectile is instantaneous.
+    // Acceleration need not be computed.
 
     for (u32 projectile_entity_index = 0;
          projectile_entity_index < game_world->high_freq_entity_count;
@@ -868,6 +962,23 @@ internal void update_projectiles(game_state_t *restrict game_state)
                     {
                         game_world
                             ->high_freq_entities[projectile_entity_index] =
+                            game_world->high_freq_entities
+                                [game_world->high_freq_entity_count-- - 1];
+                    }
+                }
+
+                // If projectile hit a enemy, remove enemy from high freq array
+                // if HP is zero.
+                if (entity->hitpoints == 0 &&
+                    entity->entity_type == game_entity_type_enemy)
+                {
+                    if (game_world->high_freq_entity_count == 1)
+                    {
+                        game_world->high_freq_entity_count--;
+                    }
+                    else
+                    {
+                        game_world->high_freq_entities[entity_index] =
                             game_world->high_freq_entities
                                 [game_world->high_freq_entity_count-- - 1];
                     }
@@ -1010,6 +1121,8 @@ __declspec(dllexport) void game_update_and_render(
         game_state->game_world.player_high_freq_entity_index =
             player_high_freq_entity_index;
 
+        game_state->seed = init_random_seed(0);
+
         // Create a few chunks for the player to roam in.
         for (i32 chunk_y = -4; chunk_y <= 4; chunk_y++)
         {
@@ -1082,6 +1195,21 @@ __declspec(dllexport) void game_update_and_render(
                                   (v2f32_t){1.0f, 1.0f}, 1, 0, 0,
                                   &game_state->memory_arena, 1);
                 }
+
+                // Each chunk has a few enemies at random positions.
+                game_position_t enemy_position = {0};
+                enemy_position.position = (v2f64_t){
+                    ((f64)CHUNK_DIMENSION_IN_METERS_X / 2) +
+                        get_next_random_normal(&game_state->seed) * 5.0f,
+                    ((f64)CHUNK_DIMENSION_IN_METERS_Y / 2) +
+                        get_next_random_normal(&game_state->seed) * 5.0f};
+
+                enemy_position.position = v2f64_add(
+                    enemy_position.position, chunk_relative_tile_entity_offset);
+
+                create_entity(&game_state->game_world, game_entity_type_enemy,
+                              enemy_position, (v2f32_t){0.6f, 0.6f}, 1, 3, 3,
+                              &game_state->memory_arena, 1);
             }
         }
         // Add a familiar entity.
@@ -1121,11 +1249,9 @@ __declspec(dllexport) void game_update_and_render(
         game_state->game_world.cached_ground_splat.green_shift = 8;
         game_state->game_world.cached_ground_splat.blue_shift = 0;
 
-        game_state->seed = init_random_seed(0);
-
         // NOTE: For testing purposes only
-        // draw a random number of splats in screen space. A function will be
-        // later created where splats are randomly created taking into
+        // draw a random number of splats in screen space. A function will
+        // be later created where splats are randomly created taking into
         // consideration chunk dimensions.
         for (i32 splat_index = 0; splat_index < 1000000; splat_index++)
         {
@@ -1135,7 +1261,8 @@ __declspec(dllexport) void game_update_and_render(
             u32 splat_texture_index = get_next_random_in_range(
                 &game_state->seed, 0u, ARRAY_SIZE(game_state->splat_textures));
 
-            f32 alpha_multiplier = get_next_random_normal(&game_state->seed);
+            f32 alpha_multiplier =
+                get_next_random_normal(&game_state->seed) * 0.2f;
 
             v2f32_t splat_bottom_left_position_screen_space =
                 (v2f32_t){game_framebuffer->width / 2.0f +
@@ -1230,8 +1357,8 @@ __declspec(dllexport) void game_update_and_render(
         }
     }
 
-    // Take the current camera position, and the high frequency entities that
-    // are not in the same chunk as player, move it to low freq array.
+    // Take the current camera position, and the high frequency entities
+    // that are not in the same chunk as player, move it to low freq array.
     u32 high_freq_entity_count = game_world->high_freq_entity_count;
 
     for (u32 entity_index = 0; entity_index < high_freq_entity_count;)
@@ -1289,6 +1416,7 @@ __declspec(dllexport) void game_update_and_render(
 
     update_player(game_input, game_state);
     update_projectiles(game_state);
+    update_enemies(game_state, game_input->dt_for_frame);
 
 #if 0
     // Change the hit points based on input.
@@ -1555,6 +1683,54 @@ __declspec(dllexport) void game_update_and_render(
                            v2f32_scalar_multiply(entity->dimension,
                                                  game_state->pixels_to_meters),
                            0.0f, 1.0f, 0.0f, 1.0f);
+        }
+        break;
+
+        case game_entity_type_enemy: {
+            draw_rectangle(game_framebuffer, rendering_offset,
+                           v2f32_scalar_multiply(entity->dimension,
+                                                 game_state->pixels_to_meters),
+                           1.0f, 1.0f, 1.0f, 1.0f);
+
+            // Draw hitpoints in the form of small rectangles below the
+            // enemy.
+            const f32 hitpoint_rect_width = 0.1f * game_state->pixels_to_meters;
+
+            v2f32_t center_hitpoint_rect_bottom_left_offset = {
+                rendering_offset.x +
+                    (entity->dimension.width / 2.0f) *
+                        game_state->pixels_to_meters -
+                    hitpoint_rect_width / 2.0f,
+                rendering_offset.y - hitpoint_rect_width * 3.0f};
+
+            const f32 space_between_hp_rects = 4.0f;
+
+            f32 offset_between_hp_rects =
+                (hitpoint_rect_width + space_between_hp_rects);
+
+            if (entity->hitpoints % 2 == 0)
+            {
+                center_hitpoint_rect_bottom_left_offset.x +=
+                    offset_between_hp_rects / 2.0f;
+            }
+
+            center_hitpoint_rect_bottom_left_offset.x -=
+                truncate_f32_to_i32(entity->hitpoints / 2.0f) *
+                offset_between_hp_rects;
+
+            for (i32 hp = 0; hp < entity->hitpoints; hp++)
+            {
+                v2f32_t hp_rendering_offset =
+                    center_hitpoint_rect_bottom_left_offset;
+
+                draw_rectangle(
+                    game_framebuffer, hp_rendering_offset,
+                    (v2f32_t){hitpoint_rect_width, hitpoint_rect_width}, 1.0f,
+                    0.0f, 0.0f, 1.0f);
+
+                center_hitpoint_rect_bottom_left_offset.x +=
+                    offset_between_hp_rects;
+            }
         }
         break;
 
