@@ -281,7 +281,7 @@ internal u32 create_entity(game_world_t *restrict game_world,
 // A few specializations for create entity call.
 internal void create_projectile(game_world_t *restrict game_world,
                                 game_position_t position, v2f32_t dimension,
-                                v2f32_t velocity,
+                                v2f32_t velocity, f32 r, f32 g, f32 b,
                                 arena_allocator_t *restrict arena_allocator)
 {
     ASSERT(game_world);
@@ -299,6 +299,10 @@ internal void create_projectile(game_world_t *restrict game_world,
     game_world->low_freq_entities[low_freq_entity_index].velocity = velocity;
     game_world->low_freq_entities[low_freq_entity_index].entity_type =
         game_entity_type_projectile;
+
+    game_world->low_freq_entities[low_freq_entity_index].r = r;
+    game_world->low_freq_entities[low_freq_entity_index].g = g;
+    game_world->low_freq_entities[low_freq_entity_index].b = b;
 
     place_low_freq_entity_in_chunk(game_world, low_freq_entity_index,
                                    get_chunk_index_from_position(position),
@@ -650,7 +654,7 @@ internal void update_enemies(game_state_t *game_state, f32 dt_for_frame)
                 v2f32_scalar_multiply(
                     convert_to_v2f32(v2f64_normalize(enemy_to_player_vector)),
                     0.1f),
-                &game_state->memory_arena);
+                1.0f, 0.0f, 0.0f, &game_state->memory_arena);
 
             enemy->time_left_to_shoot = enemy->delay_between_shots;
         }
@@ -1425,18 +1429,38 @@ __declspec(dllexport) void game_update_and_render(
                          splat_bottom_left_position_screen_space,
                          alpha_multiplier);
         }
+        game_state->current_render_group_size = 0;
         game_state->is_initialized = 1;
     }
 
-    // Clear screen.
-    draw_rectangle(
-        game_framebuffer, (v2f32_t){0.0f, 0.0f},
-        (v2f32_t){(f32)game_framebuffer->width, (f32)game_framebuffer->height},
-        0.0f, 0.0f, 0.0f, 1.0f);
+    game_state->current_render_group_size = 0;
+
+    // TODO: Add functionality so that the render group takes in a pointer to
+    // the output RT. Clear screen.
+    {
+        render_group_t render_group = {0};
+        render_group.bottom_left = (v2f32_t){0.0f, 0.0f};
+        render_group.rect_dimensions = (v2f32_t){(f32)game_framebuffer->width,
+                                                 (f32)game_framebuffer->height};
+        render_group.r = 0.0f;
+        render_group.g = 0.0f;
+        render_group.b = 0.0f;
+        render_group.a = 1.0f;
+
+        add_render_group(game_state->render_groups,
+                         game_state->current_render_group_size++, render_group);
+    }
 
     // Draw the cached splat texture.
-    draw_texture(&game_state->game_world.cached_ground_splat, game_framebuffer,
-                 (v2f32_t){0.0f, 0.0f}, 1.0f);
+    {
+        render_group_t render_group = {0};
+        render_group.bottom_left = (v2f32_t){0.0f, 0.0f};
+        render_group.texture = &game_state->game_world.cached_ground_splat;
+        render_group.a = 0.5f;
+
+        add_render_group(game_state->render_groups,
+                         game_state->current_render_group_size++, render_group);
+    }
 
     game_world_t *game_world = &(game_state->game_world);
 
@@ -1596,8 +1620,8 @@ __declspec(dllexport) void game_update_and_render(
             v2f64_add(player_new_position, (v2f64_t){0.5f, 0.0f});
 
         create_projectile(game_world, projectile_game_position,
-                          (v2f32_t){0.2f, 0.2f}, (v2f32_t){0.1f, 0.0f},
-                          &game_state->memory_arena);
+                          (v2f32_t){0.2f, 0.2f}, (v2f32_t){0.1f, 0.0f}, 0.0f,
+                          1.0f, 0.0f, &game_state->memory_arena);
     }
 
     else if (game_input->keyboard_state.key_left.is_key_down &&
@@ -1609,8 +1633,8 @@ __declspec(dllexport) void game_update_and_render(
             v2f64_add(player_new_position, (v2f64_t){-0.5f, 0.0f});
 
         create_projectile(game_world, projectile_game_position,
-                          (v2f32_t){0.2f, 0.2f}, (v2f32_t){-0.1f, 0.0f},
-                          &game_state->memory_arena);
+                          (v2f32_t){0.2f, 0.2f}, (v2f32_t){-0.1f, 0.0f}, 0.0f,
+                          1.0f, 0.0f, &game_state->memory_arena);
     }
 
     if (game_input->keyboard_state.key_up.is_key_down &&
@@ -1622,8 +1646,8 @@ __declspec(dllexport) void game_update_and_render(
             v2f64_add(player_new_position, (v2f64_t){0.0f, 0.5f});
 
         create_projectile(game_world, projectile_game_position,
-                          (v2f32_t){0.2f, 0.2f}, (v2f32_t){0.0f, 0.1f},
-                          &game_state->memory_arena);
+                          (v2f32_t){0.2f, 0.2f}, (v2f32_t){0.0f, 0.1f}, 0.0f,
+                          1.0f, 0.0f, &game_state->memory_arena);
     }
 
     else if (game_input->keyboard_state.key_down.is_key_down &&
@@ -1635,8 +1659,8 @@ __declspec(dllexport) void game_update_and_render(
             v2f64_add(player_new_position, (v2f64_t){0.0f, -0.5f});
 
         create_projectile(game_world, projectile_game_position,
-                          (v2f32_t){0.2f, 0.2f}, (v2f32_t){0.0f, -0.1f},
-                          &game_state->memory_arena);
+                          (v2f32_t){0.2f, 0.2f}, (v2f32_t){0.0f, -0.1f}, 0.0f,
+                          1.0f, 0.0f, &game_state->memory_arena);
     }
     // Take the familiar entity, and make it follow the player.
     for (u32 entity_index = 0;
@@ -1719,6 +1743,7 @@ __declspec(dllexport) void game_update_and_render(
         game_world->camera_world_position.position.y += direction_to_move_y;
     }
 
+#if 0
     // Render entites
     for (u32 entity_index = 0;
          entity_index < game_world->high_freq_entity_count; entity_index++)
@@ -1832,7 +1857,7 @@ __declspec(dllexport) void game_update_and_render(
             draw_rectangle(game_framebuffer, rendering_offset,
                            v2f32_scalar_multiply(entity->dimension,
                                                  game_state->pixels_to_meters),
-                           0.0f, 1.0f, 0.0f, 1.0f);
+                           entity->r, entity->g, entity->b, 1.0f);
         }
         break;
 
@@ -1891,6 +1916,228 @@ __declspec(dllexport) void game_update_and_render(
         break;
         }
     }
+#endif
+
+    // Render entites
+    for (u32 entity_index = 0;
+         entity_index < game_world->high_freq_entity_count; entity_index++)
+    {
+        game_entity_t *entity = &game_world->high_freq_entities[entity_index];
+
+        v2f32_t entity_camera_relative_position_v2f32 = convert_to_v2f32(
+            v2f64_subtract(entity->position.position,
+                           game_world->camera_world_position.position));
+
+        v2f32_t entity_position_bottom_left =
+            v2f32_subtract(entity_camera_relative_position_v2f32,
+                           v2f32_scalar_multiply(entity->dimension, 0.5f));
+
+        v2f32_t entity_bottom_left_position_in_pixels = v2f32_scalar_multiply(
+            entity_position_bottom_left, game_state->pixels_to_meters);
+
+        v2f32_t rendering_offset =
+            v2f32_add((v2f32_t){game_framebuffer->width / 2.0f,
+                                game_framebuffer->height / 2.0f},
+                      entity_bottom_left_position_in_pixels);
+
+        switch (entity->entity_type)
+        {
+        case game_entity_type_player: {
+            // Player sprite position has to be such that the bottom middle
+            // of the sprite coincides with the botom middle of player
+            // position.
+
+            v2f32_t player_sprite_bottom_left_offset =
+                v2f32_add((v2f32_t){game_framebuffer->width / 2.0f,
+                                    game_framebuffer->height / 2.0f},
+                          entity_bottom_left_position_in_pixels);
+
+            // TODO: This is a very hacky solution, and will likely not work
+            // when the player sprite changes dimensions. Fix this!!
+            player_sprite_bottom_left_offset.x -=
+                game_state->player_texture.width / 8.0f;
+
+            render_group_t render_group = {0};
+            render_group.bottom_left = player_sprite_bottom_left_offset;
+            render_group.texture = &game_state->player_texture;
+            render_group.a = 1.0f;
+
+            add_render_group(game_state->render_groups,
+                             game_state->current_render_group_size++,
+                             render_group);
+
+            // Draw hitpoints in the form of small rectangles below the
+            // player.
+            const f32 hitpoint_rect_width = 0.1f * game_state->pixels_to_meters;
+
+            v2f32_t center_hitpoint_rect_bottom_left_offset = {
+                rendering_offset.x +
+                    (entity->dimension.width / 2.0f) *
+                        game_state->pixels_to_meters -
+                    hitpoint_rect_width / 2.0f,
+                rendering_offset.y - hitpoint_rect_width * 3.0f};
+
+            const f32 space_between_hp_rects = 4.0f;
+
+            f32 offset_between_hp_rects =
+                (hitpoint_rect_width + space_between_hp_rects);
+
+            if (entity->hitpoints % 2 == 0)
+            {
+                center_hitpoint_rect_bottom_left_offset.x +=
+                    offset_between_hp_rects / 2.0f;
+            }
+
+            center_hitpoint_rect_bottom_left_offset.x -=
+                truncate_f32_to_i32(entity->hitpoints / 2.0f) *
+                offset_between_hp_rects;
+
+            for (i32 hp = 0; hp < entity->hitpoints; hp++)
+            {
+                v2f32_t hp_rendering_offset =
+                    center_hitpoint_rect_bottom_left_offset;
+
+                render_group_t render_group = {0};
+                render_group.bottom_left = hp_rendering_offset;
+                render_group.rect_dimensions =
+                    (v2f32_t){hitpoint_rect_width, hitpoint_rect_width};
+                render_group.r = 1.0f;
+                render_group.g = 0.0f;
+                render_group.b = 0.0f;
+                render_group.a = 1.0f;
+
+                add_render_group(game_state->render_groups,
+                                 game_state->current_render_group_size++,
+                                 render_group);
+
+                center_hitpoint_rect_bottom_left_offset.x +=
+                    offset_between_hp_rects;
+            }
+        }
+        break;
+
+        case game_entity_type_wall: {
+            render_group_t render_group = {0};
+            render_group.bottom_left = rendering_offset;
+            render_group.rect_dimensions = v2f32_scalar_multiply(
+                entity->dimension, game_state->pixels_to_meters);
+            render_group.r = 0.4f;
+            render_group.g = 0.1f;
+            render_group.b = 0.4f;
+            render_group.a = 0.5f;
+
+            add_render_group(game_state->render_groups,
+                             game_state->current_render_group_size++,
+                             render_group);
+        }
+        break;
+
+        case game_entity_type_familiar: {
+            render_group_t render_group = {0};
+            render_group.bottom_left = rendering_offset;
+            render_group.rect_dimensions = v2f32_scalar_multiply(
+                entity->dimension, game_state->pixels_to_meters);
+            render_group.r = 0.4f;
+            render_group.g = 0.1f;
+            render_group.b = 0.4f;
+            render_group.a = 0.5f;
+
+            add_render_group(game_state->render_groups,
+                             game_state->current_render_group_size++,
+                             render_group);
+        }
+        break;
+
+        case game_entity_type_projectile: {
+            render_group_t render_group = {0};
+            render_group.bottom_left = rendering_offset;
+            render_group.rect_dimensions = v2f32_scalar_multiply(
+                entity->dimension, game_state->pixels_to_meters);
+            render_group.r = entity->r;
+            render_group.g = entity->g;
+            render_group.b = entity->b;
+            render_group.a = 1.0f;
+
+            add_render_group(game_state->render_groups,
+                             game_state->current_render_group_size++,
+                             render_group);
+        }
+        break;
+
+        case game_entity_type_enemy: {
+            render_group_t render_group = {0};
+            render_group.bottom_left = rendering_offset;
+            render_group.rect_dimensions = v2f32_scalar_multiply(
+                entity->dimension, game_state->pixels_to_meters);
+            render_group.r = 1.0f;
+            render_group.g = 1.0f;
+            render_group.b = 1.0f;
+            render_group.a = 1.0f;
+
+            add_render_group(game_state->render_groups,
+                             game_state->current_render_group_size++,
+                             render_group);
+
+            // Draw hitpoints in the form of small rectangles below the
+            // enemy.
+            const f32 hitpoint_rect_width = 0.1f * game_state->pixels_to_meters;
+
+            v2f32_t center_hitpoint_rect_bottom_left_offset = {
+                rendering_offset.x +
+                    (entity->dimension.width / 2.0f) *
+                        game_state->pixels_to_meters -
+                    hitpoint_rect_width / 2.0f,
+                rendering_offset.y - hitpoint_rect_width * 3.0f};
+
+            const f32 space_between_hp_rects = 4.0f;
+
+            f32 offset_between_hp_rects =
+                (hitpoint_rect_width + space_between_hp_rects);
+
+            if (entity->hitpoints % 2 == 0)
+            {
+                center_hitpoint_rect_bottom_left_offset.x +=
+                    offset_between_hp_rects / 2.0f;
+            }
+
+            center_hitpoint_rect_bottom_left_offset.x -=
+                truncate_f32_to_i32(entity->hitpoints / 2.0f) *
+                offset_between_hp_rects;
+
+            for (i32 hp = 0; hp < entity->hitpoints; hp++)
+            {
+                v2f32_t hp_rendering_offset =
+                    center_hitpoint_rect_bottom_left_offset;
+
+                render_group_t render_group = {0};
+                render_group.bottom_left = hp_rendering_offset;
+                render_group.rect_dimensions =
+                    (v2f32_t){hitpoint_rect_width, hitpoint_rect_width};
+                render_group.r = 1.0f;
+                render_group.g = 0.0f;
+                render_group.b = 0.0f;
+                render_group.a = 1.0f;
+
+                add_render_group(game_state->render_groups,
+                                 game_state->current_render_group_size++,
+                                 render_group);
+
+                center_hitpoint_rect_bottom_left_offset.x +=
+                    offset_between_hp_rects;
+            }
+        }
+        break;
+
+        default: {
+            ASSERT("Invalid code path");
+            ASSERT(0);
+        }
+        break;
+        }
+    }
+
+    render(game_state->render_groups, game_state->current_render_group_size,
+           game_framebuffer);
 
     END_GAME_COUNTER(game_update_and_render_counter);
 }

@@ -29,7 +29,7 @@ del *.rdi
 cl /TC /Fe"main.exe" /DPRISM_DEBUG=1 /DPRISM_INTERNAL=1 /MTd /nologo /WX /W4 /wd4100 /wd4189 /wd4702 /Od /Oi /Z7 /std:c17  ../src/platform/win32_main.c /link /SUBSYSTEM:windows user32.lib gdi32.lib Winmm.lib Advapi32.lib
 
 set pdb_file_timestamp=game_%random%_%random%_%random%
-cl /TC /DPRISM_DEBUG=1 /DPRISM_INTERNAL=1 /MT /nologo /WX /wd4100 /wd4189 /wd4702 /W4 /Od /Oi /Z7  /std:c17 /LD ../src/game.c /link /pdb:%pdb_file_timestamp%.pdb  
+cl /TC /DPRISM_DEBUG=1 /DPRISM_INTERNAL=1 /MT /nologo /WX /wd4456 /wd4100 /wd4189 /wd4702 /W4 /Od /Oi /Z7  /std:c17 /LD ../src/game.c /link /pdb:%pdb_file_timestamp%.pdb  
 popd
 
 IF %1.==. GOTO end

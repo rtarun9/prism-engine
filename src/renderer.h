@@ -21,6 +21,26 @@ typedef struct
     u32 *memory;
 } game_texture_t;
 
+// For rendering, a render group is setup.
+// This allows entity and actual rendering to be separated.
+typedef struct
+{
+    v2f32_t bottom_left;
+    game_texture_t *texture;
+    v2f32_t rect_dimensions;
+    f32 r;
+    f32 g;
+    f32 b;
+    f32 a;
+} render_group_t;
+
+internal void add_render_group(render_group_t *render_group_array,
+                               u32 new_render_group_size,
+                               render_group_t render_group)
+{
+    render_group_array[new_render_group_size] = render_group;
+}
+
 // NOTE: The offsets are framebuffer relative!!
 internal void draw_rectangle(game_texture_t *game_framebuffer,
                              v2f32_t bottom_left_offset,
@@ -211,6 +231,27 @@ internal void draw_texture(game_texture_t *restrict texture,
         }
 
         destination_row += destination_pitch;
+    }
+}
+
+internal void render(render_group_t *restrict render_groups,
+                     u32 render_group_size,
+                     game_texture_t *restrict framebuffer)
+{
+    for (u32 i = 0; i < render_group_size; i++)
+    {
+        if (render_groups[i].texture == NULL)
+        {
+            draw_rectangle(framebuffer, render_groups[i].bottom_left,
+                           render_groups[i].rect_dimensions, render_groups[i].r,
+                           render_groups[i].g, render_groups[i].b,
+                           render_groups[i].a);
+        }
+        else
+        {
+            draw_texture(render_groups[i].texture, framebuffer,
+                         render_groups[i].bottom_left, render_groups[i].a);
+        }
     }
 }
 

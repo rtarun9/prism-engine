@@ -110,6 +110,10 @@ typedef struct
     // be shot. If the time is less than 0, it is reset to delay_between_shots.
     f32 time_left_to_shoot;
     f32 delay_between_shots;
+
+    // color attribute for use only by projectiles.
+    f32 r, g, b;
+
 } game_entity_t;
 
 // To partition entities spatially, a hash map of chunks is created, where
@@ -218,6 +222,9 @@ typedef struct
     random_seed_t seed;
 
     u32 is_initialized;
+
+    render_group_t render_groups[2048];
+    u32 current_render_group_size;
 } game_state_t;
 
 // Services / interfaces provided by the platform layer to the game.
