@@ -610,6 +610,22 @@ load_texture(platform_services_t *restrict platform_services,
     return texture;
 }
 
+typedef enum
+{
+    projectile_creator_player,
+    projectile_creator_enemy,
+} projectile_creator_t;
+
+internal projectile_creator_t get_projectile_creator(game_entity_t *entity)
+{
+    if (entity->r == 1.0f && entity->g == 0.0f && entity->b == 0.0f)
+    {
+        return projectile_creator_enemy;
+    }
+
+    return projectile_creator_player;
+}
+
 // Enemies move near the player and shoot projectiles at player.
 internal void update_enemies(game_state_t *game_state, f32 dt_for_frame)
 {
@@ -1081,9 +1097,20 @@ internal void update_projectiles(game_state_t *restrict game_state)
             {
                 // If entity is player or enemy, remove the projectile from
                 // entirely.
-                if (entity->entity_type == game_entity_type_player)
+                b32 player_hit_by_enemy =
+                    entity->entity_type == game_entity_type_player &&
+                    get_projectile_creator(projectile_entity) ==
+                        projectile_creator_enemy;
+
+                b32 enemy_hit_by_player =
+                    entity->entity_type == game_entity_type_enemy &&
+                    get_projectile_creator(projectile_entity) ==
+                        projectile_creator_player;
+
+                if (player_hit_by_enemy || enemy_hit_by_player)
                 {
                     entity->hitpoints--;
+
                     // Remove projectile from high freq entity set.
                     if (game_world->high_freq_entity_count == 1)
                     {
@@ -1096,12 +1123,30 @@ internal void update_projectiles(game_state_t *restrict game_state)
                             game_world->high_freq_entities
                                 [game_world->high_freq_entity_count-- - 1];
                     }
+
+                    // If projectile hit a enemy, remove enemy from high freq
+                    // array if HP is zero.
+                    if (entity->hitpoints == 0)
+                    {
+                        if (game_world->high_freq_entity_count == 1)
+                        {
+                            game_world->high_freq_entity_count--;
+                        }
+                        else
+                        {
+                            game_world->high_freq_entities[entity_index] =
+                                game_world->high_freq_entities
+                                    [game_world->high_freq_entity_count-- - 1];
+                        }
+                    }
                     break;
                 }
 
-                projectile_collided = 1;
-                entity->hitpoints--;
+                // If the projectile hit a wall, or if the projectile creator
+                // hit the projectile, ONLY the projectiles HP will reduce and
+                // NOT the hit entities.
 
+                projectile_collided = 1;
                 projectile_entity->hitpoints--;
 
                 if (projectile_entity->hitpoints == 0)
@@ -1115,23 +1160,6 @@ internal void update_projectiles(game_state_t *restrict game_state)
                     {
                         game_world
                             ->high_freq_entities[projectile_entity_index] =
-                            game_world->high_freq_entities
-                                [game_world->high_freq_entity_count-- - 1];
-                    }
-                }
-
-                // If projectile hit a enemy, remove enemy from high freq
-                // array if HP is zero.
-                if (entity->hitpoints == 0 &&
-                    entity->entity_type == game_entity_type_enemy)
-                {
-                    if (game_world->high_freq_entity_count == 1)
-                    {
-                        game_world->high_freq_entity_count--;
-                    }
-                    else
-                    {
-                        game_world->high_freq_entities[entity_index] =
                             game_world->high_freq_entities
                                 [game_world->high_freq_entity_count-- - 1];
                     }
@@ -1237,6 +1265,8 @@ __declspec(dllexport) void game_update_and_render(
     CLEAR_GAME_COUNTERS();
     BEGIN_GAME_COUNTER(game_update_and_render_counter);
 
+    // BUG: When the player dies, why is the control handed over to the previous
+    // - player -following familiar?
     if (!game_state->is_initialized)
     {
         // Initialize memory arena.
