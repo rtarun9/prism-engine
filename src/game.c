@@ -1437,22 +1437,25 @@ __declspec(dllexport) void game_update_and_render(
         // draw a random number of splats in screen space. A function will
         // be later created where splats are randomly created taking into
         // consideration chunk dimensions.
-        for (i32 splat_index = 0; splat_index < 1000; splat_index++)
+        for (i32 splat_index = 0; splat_index < 10; splat_index++)
         {
-            // Convert 0 to 1 into -1 to 1 range.
-            f32 x = get_next_random_normal(&game_state->seed) * 2.0f - 1.0f;
-            f32 y = get_next_random_normal(&game_state->seed) * 2.0f - 1.0f;
+            f32 x = get_next_random_normal(&game_state->seed);
+            f32 y = get_next_random_normal(&game_state->seed);
 
             u32 splat_texture_index = get_next_random_in_range(
                 &game_state->seed, 0u, ARRAY_SIZE(game_state->splat_textures));
 
             f32 alpha_multiplier = get_next_random_normal(&game_state->seed);
-
-            v2f32_t splat_bottom_left_position = (v2f32_t){x, y};
+            v2f32_t splat_bottom_left_position_screen_space =
+                (v2f32_t){game_framebuffer->width / 2.0f +
+                              (x - 0.5f) * game_framebuffer->width,
+                          (y - 0.5f) * game_framebuffer->height +
+                              game_framebuffer->height / 2.0f};
 
             draw_texture(&game_state->splat_textures[splat_texture_index],
                          &game_state->game_world.cached_ground_splat,
-                         splat_bottom_left_position, alpha_multiplier);
+                         splat_bottom_left_position_screen_space,
+                         alpha_multiplier);
         }
         game_state->current_render_group_size = 0;
         game_state->is_initialized = 1;
@@ -1464,7 +1467,7 @@ __declspec(dllexport) void game_update_and_render(
     // the output RT. Clear screen.
     {
         render_group_t render_group = {0};
-        render_group.bottom_left = (v2f32_t){-1.0f, -1.0f};
+        render_group.bottom_left = (v2f32_t){0.0f, 0.0f};
         render_group.rect_dimensions = (v2f32_t){(f32)game_framebuffer->width,
                                                  (f32)game_framebuffer->height};
         render_group.r = 0.0f;
@@ -1479,9 +1482,9 @@ __declspec(dllexport) void game_update_and_render(
     // Draw the cached splat texture.
     {
         render_group_t render_group = {0};
-        render_group.bottom_left = (v2f32_t){-1.0f, -1.0f};
+        render_group.bottom_left = (v2f32_t){0.0f, 0.0f};
         render_group.texture = &game_state->game_world.cached_ground_splat;
-        render_group.a = 1.0f;
+        render_group.a = 0.5e;
 
         add_render_group(game_state->render_groups,
                          game_state->current_render_group_size++, render_group);
@@ -1782,22 +1785,17 @@ __declspec(dllexport) void game_update_and_render(
             v2f32_subtract(entity_camera_relative_position_v2f32,
                            v2f32_scalar_multiply(entity->dimension, 0.5f));
 
+        v2f32_t entity_bottom_left_position_in_pixels = v2f32_scalar_multiply(
+            entity_position_bottom_left, game_state->pixels_to_meters);
+
+        v2f32_t rendering_offset =
+            v2f32_add((v2f32_t){game_framebuffer->width / 2.0f,
+                                game_framebuffer->height / 2.0f},
+                      entity_bottom_left_position_in_pixels);
 
         switch (entity->entity_type)
         {
-            case game_entity_type_player:
-            case game_entity_type_familiar:
-            case game_entity_type_projectile:
-            case game_entity_type_enemy:
-            case game_entity_type_none:
-                {
-                    continue;
-                }break;
-
-        #if 0
-            // TODO: Switch this code so that no screen dependent information is used, instead all such info is used only in the renderer.
         case game_entity_type_player: {
-                continue;
             // Player sprite position has to be such that the bottom middle
             // of the sprite coincides with the botom middle of player
             // position.
@@ -1870,14 +1868,10 @@ __declspec(dllexport) void game_update_and_render(
             }
         }
         break;
-        #endif 
 
         case game_entity_type_wall: {
             render_group_t render_group = {0};
-            render_group.bottom_left = v2f32_scalar_multiply(entity_position_bottom_left, game_state->pixels_to_meters);
-                render_group.bottom_left.x *= 1.0f / game_framebuffer->width;
-                render_group.bottom_left.y *= 1.0f / game_framebuffer->height;
-
+            render_group.bottom_left = rendering_offset;
             render_group.rect_dimensions = v2f32_scalar_multiply(
                 entity->dimension, game_state->pixels_to_meters);
             render_group.r = 0.4f;
@@ -1891,10 +1885,7 @@ __declspec(dllexport) void game_update_and_render(
         }
         break;
 
-        #if 0
         case game_entity_type_familiar: {
-            // TODO: Switch this code so that no screen dependent information is used, instead all such info is used only in the renderer.
-                continue;
             render_group_t render_group = {0};
             render_group.bottom_left = rendering_offset;
             render_group.rect_dimensions = v2f32_scalar_multiply(
@@ -1911,8 +1902,6 @@ __declspec(dllexport) void game_update_and_render(
         break;
 
         case game_entity_type_projectile: {
-            // TODO: Switch this code so that no screen dependent information is used, instead all such info is used only in the renderer.
-                continue;
             render_group_t render_group = {0};
             render_group.bottom_left = rendering_offset;
             render_group.rect_dimensions = v2f32_scalar_multiply(
@@ -1929,8 +1918,6 @@ __declspec(dllexport) void game_update_and_render(
         break;
 
         case game_entity_type_enemy: {
-            // TODO: Switch this code so that no screen dependent information is used, instead all such info is used only in the renderer.
-                continue;
             render_group_t render_group = {0};
             render_group.bottom_left = rendering_offset;
             render_group.rect_dimensions = v2f32_scalar_multiply(
@@ -1993,7 +1980,6 @@ __declspec(dllexport) void game_update_and_render(
             }
         }
         break;
-        #endif
 
         default: {
             ASSERT("Invalid code path");

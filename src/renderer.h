@@ -23,11 +23,6 @@ typedef struct
 
 // For rendering, a render group is setup.
 // This allows entity and actual rendering to be separated.
-// NOTE: bottom left coordinates are in 'render space', where the origin is 0, 0
-// (center of framebuffer), and goes to range -1, 1 along both x and y axis.
-// This maps nicely to how entities are to be rendered, since the camera is at
-// the center of the screen and rendering computations are done relative to the
-// camera position.
 typedef struct
 {
     v2f32_t bottom_left;
@@ -46,8 +41,6 @@ internal void add_render_group(render_group_t *render_group_array,
     render_group_array[new_render_group_size] = render_group;
 }
 
-// NOTE: The offsets are in range [-1, 1]. The are normalized framebuffer
-// relative!!
 internal void draw_rectangle(game_texture_t *game_framebuffer,
                              v2f32_t bottom_left_offset,
                              v2f32_t width_and_height, f32 normalized_red,
@@ -64,11 +57,6 @@ internal void draw_rectangle(game_texture_t *game_framebuffer,
     ASSERT(normalized_blue >= 0.0f);
     ASSERT(normalized_alpha >= 0.0f);
     ASSERT(normalized_alpha <= 1.0f);
-
-    bottom_left_offset.x =
-        ((bottom_left_offset.x + 1.0f) / 2.0f * game_framebuffer->width);
-    bottom_left_offset.y =
-        ((bottom_left_offset.y + 1.0f) / 2.0f * game_framebuffer->height);
 
     i32 min_x = round_f32_to_i32(bottom_left_offset.x);
     i32 min_y = round_f32_to_i32(bottom_left_offset.y);
@@ -136,18 +124,10 @@ internal void draw_rectangle(game_texture_t *game_framebuffer,
     }
 }
 
-// NOTE: Bottom left offset is in normalized framebuffer coords [0, 1], where
-// origin is in the bottom left coord.
 internal void draw_texture(game_texture_t *restrict texture,
                            game_texture_t *restrict framebuffer,
                            v2f32_t bottom_left_offset, f32 alpha_multiplier)
 {
-    // Convert the bottom left offsets from normalized framebuffer coords to
-    // frame buffer coords.
-    bottom_left_offset.x =
-        ((bottom_left_offset.x + 1.0f) / 2.0f * framebuffer->width);
-    bottom_left_offset.y =
-        ((bottom_left_offset.y + 1.0f) / 2.0f * framebuffer->height);
 
     i32 min_x = round_f32_to_i32(bottom_left_offset.x);
     i32 min_y = round_f32_to_i32(bottom_left_offset.y);
@@ -255,7 +235,7 @@ internal void draw_texture(game_texture_t *restrict texture,
 }
 
 internal void render(render_group_t *restrict render_groups,
-                     u32 render_group_size, 
+                     u32 render_group_size,
                      game_texture_t *restrict framebuffer)
 {
     for (u32 i = 0; i < render_group_size; i++)
