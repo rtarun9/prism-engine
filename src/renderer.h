@@ -41,7 +41,6 @@ internal void add_render_group(render_group_t *render_group_array,
     render_group_array[new_render_group_size] = render_group;
 }
 
-// NOTE: The offsets are framebuffer relative!!
 internal void draw_rectangle(game_texture_t *game_framebuffer,
                              v2f32_t bottom_left_offset,
                              v2f32_t width_and_height, f32 normalized_red,
@@ -129,6 +128,7 @@ internal void draw_texture(game_texture_t *restrict texture,
                            game_texture_t *restrict framebuffer,
                            v2f32_t bottom_left_offset, f32 alpha_multiplier)
 {
+
     i32 min_x = round_f32_to_i32(bottom_left_offset.x);
     i32 min_y = round_f32_to_i32(bottom_left_offset.y);
 

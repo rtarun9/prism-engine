@@ -211,7 +211,7 @@ typedef struct
     f32 pixels_to_meters;
 
     game_world_t game_world;
-    arena_allocator_t memory_arena;
+    arena_allocator_t arena_allocator;
 
     game_texture_t player_texture;
 
