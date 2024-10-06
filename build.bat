@@ -2,7 +2,8 @@
 
 mkdir build
 pushd build
-cl.exe ../src/main.c user32.lib
+:: Zi is used to create .pdb that contains information useful for debugging.
+cl.exe /Zi ../src/main.c user32.lib gdi32.lib
 main.exe
 popd
 
