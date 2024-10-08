@@ -22,34 +22,67 @@ typedef i32 b32;
 typedef float f32;
 typedef double f64;
 
+#define true 1
+#define false 0
+
 // #defines to make usage of 'static' based on purpose more clear.
 #define internal static
 #define global_variable static
 #define local_persist static
 
-global_variable u32 *g_framebuffer_memory = NULL;
-global_variable BITMAPINFO g_bitmap_info = {0};
-
-internal void win32_render_framebuffer_to_window(HDC device_context, u32 width,
-                                                 u32 height)
+typedef struct
 {
-    StretchDIBits(device_context, 0, 0, width, height, 0, 0, width, height,
-                  g_framebuffer_memory, &g_bitmap_info, DIB_RGB_COLORS,
-                  SRCCOPY);
+    u32 *framebuffer_memory;
+    BITMAPINFO bitmap_info;
+
+    u32 width;
+    u32 height;
+} win32_offscreen_buffer_t;
+
+global_variable win32_offscreen_buffer_t g_backbuffer = {0};
+
+typedef struct
+{
+    u32 width;
+    u32 height;
+} win32_window_dimensions_t;
+
+win32_window_dimensions_t win32_get_window_dimensions(const HWND window)
+{
+    win32_window_dimensions_t result = {0};
+
+    RECT client_rect = {0};
+    GetClientRect(window, &client_rect);
+
+    result.width = client_rect.right - client_rect.left;
+    result.height = client_rect.bottom - client_rect.top;
+
+    return result;
 }
 
-internal void win32_render_gradient_to_framebuffer(u32 width, u32 height)
+internal void win32_render_buffer_to_window(
+    const win32_offscreen_buffer_t *buffer, const HDC device_context,
+    const u32 window_width, const u32 window_height)
 {
-    u32 *row = g_framebuffer_memory;
-    u32 pitch = width;
+    StretchDIBits(device_context, 0, 0, window_width, window_height, 0, 0,
+                  buffer->width, buffer->height, buffer->framebuffer_memory,
+                  &buffer->bitmap_info, DIB_RGB_COLORS, SRCCOPY);
+}
 
-    for (u32 y = 0; y < height; y++)
+internal void win32_render_gradient_to_framebuffer(
+    win32_offscreen_buffer_t *const buffer, const u32 x_shift,
+    const u32 y_shift)
+{
+    u32 *row = buffer->framebuffer_memory;
+    u32 pitch = buffer->width;
+
+    for (u32 y = 0; y < buffer->height; y++)
     {
         u32 *pixel = row;
-        for (u32 x = 0; x < width; x++)
+        for (u32 x = 0; x < buffer->width; x++)
         {
-            u8 red = (x & 0xff);
-            u8 blue = (y & 0xff);
+            u8 red = ((x + x_shift) & 0xff);
+            u8 blue = ((y + y_shift) & 0xff);
             u8 green = 0;
             u8 alpha = 0xff;
 
@@ -61,31 +94,35 @@ internal void win32_render_gradient_to_framebuffer(u32 width, u32 height)
     }
 }
 
-internal void win32_resize_framebuffer(u32 width, u32 height)
+internal void win32_resize_framebuffer(win32_offscreen_buffer_t *const buffer,
+                                       const u32 width, const u32 height)
 {
-    if (g_framebuffer_memory)
+    if (buffer->framebuffer_memory)
     {
-        VirtualFree(g_framebuffer_memory, 0, MEM_RELEASE);
+        VirtualFree(buffer->framebuffer_memory, 0, MEM_RELEASE);
     }
 
-    g_framebuffer_memory =
+    buffer->framebuffer_memory =
         VirtualAlloc(0, sizeof(u32) * width * height, MEM_COMMIT | MEM_RESERVE,
                      PAGE_READWRITE);
 
     // Update the bitmap info struct to use the new framebuffer dimensions.
     // NOTE: biHeight is negative, because it is desirable to have origin at top
     // left corner.
-    g_bitmap_info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    g_bitmap_info.bmiHeader.biWidth = width;
-    g_bitmap_info.bmiHeader.biHeight = -1 * height;
-    g_bitmap_info.bmiHeader.biPlanes = 1;
-    g_bitmap_info.bmiHeader.biBitCount = 32;
-    g_bitmap_info.bmiHeader.biCompression = BI_RGB;
-    g_bitmap_info.bmiHeader.biSizeImage = 0;
-    g_bitmap_info.bmiHeader.biXPelsPerMeter = 0;
-    g_bitmap_info.bmiHeader.biYPelsPerMeter = 0;
-    g_bitmap_info.bmiHeader.biClrUsed = 0;
-    g_bitmap_info.bmiHeader.biClrImportant = 0;
+    buffer->bitmap_info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    buffer->bitmap_info.bmiHeader.biWidth = width;
+    buffer->bitmap_info.bmiHeader.biHeight = -1 * height;
+    buffer->bitmap_info.bmiHeader.biPlanes = 1;
+    buffer->bitmap_info.bmiHeader.biBitCount = 32;
+    buffer->bitmap_info.bmiHeader.biCompression = BI_RGB;
+    buffer->bitmap_info.bmiHeader.biSizeImage = 0;
+    buffer->bitmap_info.bmiHeader.biXPelsPerMeter = 0;
+    buffer->bitmap_info.bmiHeader.biYPelsPerMeter = 0;
+    buffer->bitmap_info.bmiHeader.biClrUsed = 0;
+    buffer->bitmap_info.bmiHeader.biClrImportant = 0;
+
+    buffer->width = width;
+    buffer->height = height;
 }
 
 internal LRESULT CALLBACK win32_window_proc(HWND window, UINT message,
@@ -95,33 +132,19 @@ internal LRESULT CALLBACK win32_window_proc(HWND window, UINT message,
 
     switch (message)
     {
-    case WM_SIZE: {
-        RECT client_rect = {0};
-        GetClientRect(window, &client_rect);
-
-        u32 client_region_width = client_rect.right - client_rect.left;
-        u32 client_region_height = client_rect.bottom - client_rect.top;
-
-        win32_resize_framebuffer(client_region_width, client_region_height);
-
-        OutputDebugStringW(L"WM_SIZE\n");
-    }
-    break;
 
     case WM_PAINT: {
         PAINTSTRUCT paint = {0};
         HDC device_context = BeginPaint(window, &paint);
 
-        RECT client_rect = {0};
-        GetClientRect(window, &client_rect);
+        win32_window_dimensions_t window_dimensions =
+            win32_get_window_dimensions(window);
 
-        u32 client_region_width = client_rect.right - client_rect.left;
-        u32 client_region_height = client_rect.bottom - client_rect.top;
-
-        win32_render_gradient_to_framebuffer(client_region_width,
-                                             client_region_height);
-        win32_render_framebuffer_to_window(device_context, client_region_width,
-                                           client_region_height);
+        // NOTE: In WM_PAINT, the backbuffer is NOT being rendered to, but the
+        // window is being rendered alone. Check if this is suitable.
+        win32_render_buffer_to_window(&g_backbuffer, device_context,
+                                      window_dimensions.width,
+                                      window_dimensions.height);
 
         EndPaint(window, &paint);
 
@@ -156,9 +179,13 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
     // Register a window class : set of behaviors that several windows might
     // have in common (required even if only a single window is created by the
     // application).
+    // CS_VREDRAW | CS_HREDRAW -> Redraw the entire window everytime horizontal
+    // / vertical movement or resizing is done.
+    // CS_OWNDC is used so that a device context for window can be taken once
+    // and reused without releasing it each time.
     WNDCLASSEXW window_class = {0};
     window_class.cbSize = sizeof(WNDCLASSEXW);
-    window_class.style = CS_VREDRAW | CS_HREDRAW;
+    window_class.style = CS_VREDRAW | CS_HREDRAW | CS_OWNDC;
     window_class.lpfnWndProc = win32_window_proc;
     window_class.hInstance = instance;
     window_class.lpszClassName = L"CustomWindowClass";
@@ -166,10 +193,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
     RegisterClassExW(&window_class);
 
     // Create the actual window.
-
     HWND window = CreateWindowExW(
         0, window_class.lpszClassName, L"prism-engine", WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, CW_USEDEFAULT, 1080, 720, NULL, NULL, instance, NULL);
+        CW_USEDEFAULT, CW_USEDEFAULT, 1920, 1080, NULL, NULL, instance, NULL);
     ShowWindow(window, SW_SHOWNORMAL);
 
     if (!window)
@@ -178,20 +204,19 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
         return -1;
     }
 
-    RECT client_rect = {0};
-    GetClientRect(window, &client_rect);
+    HDC device_context = GetDC(window);
 
-    u32 client_region_width = client_rect.right - client_rect.left;
-    u32 client_region_height = client_rect.bottom - client_rect.top;
+    win32_resize_framebuffer(&g_backbuffer, 1080, 720);
 
-    win32_resize_framebuffer(client_region_width, client_region_height);
+    u32 x_shift = 0;
+    u32 y_shift = 0;
 
-    BYTE keyboard_state[256] = {0};
-
-    BOOL quit = FALSE;
+    b32 quit = false;
     while (!quit)
     {
+        BYTE keyboard_state[256] = {0};
         MSG message = {0};
+
         while (PeekMessageW(&message, 0, 0, 0, PM_REMOVE))
         {
             TranslateMessage(&message);
@@ -200,29 +225,29 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
 
         if (message.message == WM_QUIT)
         {
-            quit = TRUE;
+            quit = true;
         }
 
         if (GetKeyboardState(&keyboard_state[0]))
         {
             if (keyboard_state[VK_ESCAPE] & 0x80)
             {
-                quit = TRUE;
+                quit = true;
             }
         }
 
-        HDC device_context = GetDC(window);
         RECT client_rect = {0};
-        GetClientRect(window, &client_rect);
 
-        u32 client_region_width = client_rect.right - client_rect.left;
-        u32 client_region_height = client_rect.bottom - client_rect.top;
+        win32_window_dimensions_t window_dimensions =
+            win32_get_window_dimensions(window);
 
-        win32_render_gradient_to_framebuffer(client_region_width,
-                                             client_region_height);
-        win32_render_framebuffer_to_window(device_context, client_region_width,
-                                           client_region_height);
-        ReleaseDC(window, device_context);
+        win32_render_gradient_to_framebuffer(&g_backbuffer, x_shift, y_shift);
+        win32_render_buffer_to_window(&g_backbuffer, device_context,
+                                      window_dimensions.width,
+                                      window_dimensions.height);
+
+        x_shift++;
+        y_shift += 2;
     }
 
     return 0;
