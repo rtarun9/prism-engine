@@ -4,6 +4,8 @@
 
 #include <Windows.h>
 
+#include <xinput.h>
+
 #include <stdint.h>
 
 // Typedefs to primitive datatypes.
@@ -173,9 +175,48 @@ internal LRESULT CALLBACK win32_window_proc(HWND window, UINT message,
     return result;
 }
 
+DWORD WINAPI XInputGetState_(DWORD dw_user_index, XINPUT_STATE *state);
+DWORD WINAPI XInputSetState_(DWORD dw_user_index, XINPUT_VIBRATION *vibration);
+
+#define def_xinput_get_state(name)                                             \
+    DWORD WINAPI name(DWORD dw_user_index, XINPUT_STATE *state)
+#define def_xinput_set_state(name)                                             \
+    DWORD WINAPI name(DWORD dw_user_index, XINPUT_VIBRATION *vibration)
+
+def_xinput_get_state(xinput_get_state_stub)
+{
+    return 0;
+}
+
+def_xinput_set_state(xinput_set_state_stub)
+{
+    return 0;
+}
+
+typedef def_xinput_get_state(xinput_get_state_t);
+typedef def_xinput_set_state(xinput_set_state_t);
+
+xinput_get_state_t *xinput_get_state = xinput_get_state_stub;
+xinput_set_state_t *xinput_set_state = xinput_set_state_stub;
+
+void load_xinput_functions()
+{
+    HMODULE xinput_dll = LoadLibraryW(L"xinput1_3.dll");
+
+    if (xinput_dll)
+    {
+        xinput_get_state =
+            (xinput_get_state_t *)GetProcAddress(xinput_dll, "XInputGetState");
+        xinput_set_state =
+            (xinput_set_state_t *)GetProcAddress(xinput_dll, "XInputSetState");
+    }
+}
+
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
                     PWSTR command_line, int command_show)
 {
+    load_xinput_functions();
+
     // Register a window class : set of behaviors that several windows might
     // have in common (required even if only a single window is created by the
     // application).
@@ -228,11 +269,52 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
             quit = true;
         }
 
+        // Get keyboard input.
         if (GetKeyboardState(&keyboard_state[0]))
         {
             if (keyboard_state[VK_ESCAPE] & 0x80)
             {
                 quit = true;
+            }
+
+            b32 key_w = keyboard_state['W'] & 0x80;
+            b32 key_a = keyboard_state['A'] & 0x80;
+            b32 key_s = keyboard_state['S'] & 0x80;
+            b32 key_d = keyboard_state['D'] & 0x80;
+
+            b32 key_up = keyboard_state[VK_UP] & 0x80;
+            b32 key_down = keyboard_state[VK_RIGHT] & 0x80;
+            b32 key_left = keyboard_state[VK_LEFT] & 0x80;
+            b32 key_right = keyboard_state[VK_RIGHT] & 0x80;
+        }
+
+        // Get controller input (via xinput).
+        for (u32 controller_index = 0; controller_index < XUSER_MAX_COUNT;
+             controller_index++)
+        {
+            XINPUT_STATE controller_state = {0};
+            if (xinput_get_state(controller_index, &controller_state) ==
+                ERROR_SUCCESS)
+            {
+                // Controller is connected.
+                XINPUT_GAMEPAD *game_pad = &controller_state.Gamepad;
+
+                b32 dpad_up = game_pad->wButtons & XINPUT_GAMEPAD_DPAD_UP;
+                b32 dpad_down = game_pad->wButtons & XINPUT_GAMEPAD_DPAD_DOWN;
+                b32 dpad_left = game_pad->wButtons & XINPUT_GAMEPAD_DPAD_LEFT;
+                b32 dpad_right = game_pad->wButtons & XINPUT_GAMEPAD_DPAD_RIGHT;
+
+                b32 start = game_pad->wButtons & XINPUT_GAMEPAD_START;
+                b32 back = game_pad->wButtons & XINPUT_GAMEPAD_BACK;
+
+                b32 button_a = game_pad->wButtons & XINPUT_GAMEPAD_A;
+                b32 button_b = game_pad->wButtons & XINPUT_GAMEPAD_B;
+                b32 button_x = game_pad->wButtons & XINPUT_GAMEPAD_X;
+                b32 button_y = game_pad->wButtons & XINPUT_GAMEPAD_Y;
+            }
+            else
+            {
+                // Controller is disconnected.
             }
         }
 
