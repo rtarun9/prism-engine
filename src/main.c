@@ -7,6 +7,7 @@
 #include <dsound.h>
 #include <xinput.h>
 
+#include <math.h>
 #include <stdint.h>
 
 // Typedefs to primitive datatypes.
@@ -24,6 +25,8 @@ typedef i32 b32;
 
 typedef float f32;
 typedef double f64;
+
+#define pi32 3.14159
 
 #define true 1
 #define false 0
@@ -301,6 +304,75 @@ internal void win32_init_dsound(HWND window, u32 secondary_buffer_size,
     }
 }
 
+typedef struct
+{
+    // bytes per sample is the number of bytes for left channel + right channel.
+    u32 bytes_per_sample;
+    u32 samples_per_second;
+    u32 secondary_buffer_size;
+    u32 max_volume;
+
+    u32 frequency;
+    u32 period_in_samples;
+    u32 running_sample_index;
+} win32_sound_output_t;
+
+internal void win32_fill_sound_buffer(win32_sound_output_t *sound_output,
+                                      u32 write_lock_offset, u32 bytes_to_write)
+{
+    void *region_0 = 0;
+    DWORD region_0_bytes = 0;
+
+    void *region_1 = 0;
+    DWORD region_1_bytes = 0;
+
+    if (SUCCEEDED(IDirectSoundBuffer_Lock(
+            g_secondary_buffer, write_lock_offset, bytes_to_write, &region_0,
+            &region_0_bytes, &region_1, &region_1_bytes, 0)))
+    {
+        i16 *sample_region_0 = (i16 *)region_0;
+
+        DWORD region_0_sample_count =
+            region_0_bytes / sound_output->bytes_per_sample;
+        for (DWORD sample_count = 0; sample_count < region_0_sample_count;
+             sample_count++)
+        {
+            sound_output->running_sample_index++;
+
+            i16 sample_value =
+                (i16)(sinf(2.0f * pi32 *
+                           ((f32)sound_output->running_sample_index /
+                            (f32)sound_output->period_in_samples)) *
+                      sound_output->max_volume);
+
+            *sample_region_0++ = sample_value;
+            *sample_region_0++ = sample_value;
+        }
+
+        i16 *sample_region_1 = (i16 *)region_1;
+
+        DWORD region_1_sample_count =
+            region_1_bytes / sound_output->bytes_per_sample;
+        for (DWORD sample_count = 0; sample_count < region_1_sample_count;
+             sample_count++)
+        {
+            sound_output->running_sample_index++;
+
+            i16 sample_value =
+                (i16)(sinf(2.0f * pi32 *
+                           ((f32)sound_output->running_sample_index /
+                            (f32)sound_output->period_in_samples)) *
+                      sound_output->max_volume);
+
+            *sample_region_1++ = sample_value;
+            *sample_region_1++ = sample_value;
+        }
+
+        IDirectSoundBuffer_Unlock(g_secondary_buffer, region_0, region_0_bytes,
+                                  region_1, region_1_bytes);
+    }
+}
+
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
                     PWSTR command_line, int command_show)
 {
@@ -334,35 +406,28 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
         return -1;
     }
 
-    // One byte for left channel, one byte for right channel.
-    const u32 bytes_per_sample = sizeof(u16) * 2;
-    const u32 samples_per_second = 48000;
-    const u32 secondary_buffer_size = bytes_per_sample * samples_per_second * 2;
+    win32_sound_output_t sound_output = {0};
+    sound_output.bytes_per_sample = sizeof(u16) * 2;
+    sound_output.samples_per_second = 48000;
+    sound_output.secondary_buffer_size =
+        2 * sound_output.samples_per_second * sound_output.bytes_per_sample;
+    sound_output.max_volume = 3000;
+    sound_output.frequency = 256;
+    sound_output.period_in_samples = sound_output.samples_per_second / 256;
+    sound_output.running_sample_index = 0;
 
-    win32_init_dsound(window, secondary_buffer_size, samples_per_second);
+    win32_init_dsound(window, sound_output.secondary_buffer_size,
+                      sound_output.samples_per_second);
     IDirectSoundBuffer_Play(g_secondary_buffer, 0, 0, DSBPLAY_LOOPING);
 
     HDC device_context = GetDC(window);
 
     win32_resize_framebuffer(&g_backbuffer, 1080, 720);
+    win32_fill_sound_buffer(&sound_output, 0,
+                            sound_output.secondary_buffer_size);
 
     u32 x_shift = 0;
     u32 y_shift = 0;
-
-    // Explanation of square wave.
-    // The frequency / hertz used in that of middle C, i.e 261.63 (I will be
-    // taking 256 because of familiarity).
-    // This means middle c oscilates from one peak to another 256 times a
-    // second.
-    u32 middle_c_frequency = 256;
-    // The wavelength will determine how many samples it takes to cover the
-    // above frequency.
-    u32 middle_c_period = samples_per_second / middle_c_frequency;
-
-    // Now, half of that value will be the amount of samples a 'up' wave is
-    // produced, and vice versa.
-    u32 half_middle_c_period = middle_c_period / 2;
-    u32 running_sample_index = 0;
 
     b32 quit = false;
     while (!quit)
@@ -446,16 +511,16 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
                 g_secondary_buffer, &current_play_cursor,
                 &current_write_cursor)))
         {
-            u32 write_lock_offset = (running_sample_index * bytes_per_sample) %
-                                    secondary_buffer_size;
+            u32 write_lock_offset = (sound_output.running_sample_index *
+                                     sound_output.bytes_per_sample) %
+                                    sound_output.secondary_buffer_size;
 
             DWORD bytes_to_write = 0;
             if (write_lock_offset > current_play_cursor)
             {
-                // bytes_to_write =
-                // secondary_buffer_size - write_lock_offset; // for region 0.
-                // bytes_to_write += current_play_cursor;         // for
-                // region 1.
+                bytes_to_write = sound_output.secondary_buffer_size -
+                                 write_lock_offset;    // for region 0.
+                bytes_to_write += current_play_cursor; // for region 1.
             }
             else
             {
@@ -463,66 +528,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
                     current_play_cursor - write_lock_offset; // for region 0.
             }
 
-            void *region_0 = 0;
-            DWORD region_0_bytes = 0;
-
-            void *region_1 = 0;
-            DWORD region_1_bytes = 0;
-
-            if (SUCCEEDED(IDirectSoundBuffer_Lock(
-                    g_secondary_buffer, write_lock_offset, bytes_to_write,
-                    &region_0, &region_0_bytes, &region_1, &region_1_bytes, 0)))
-            {
-                i16 *sample_region_0 = (i16 *)region_0;
-
-                DWORD region_0_sample_count = region_0_bytes / bytes_per_sample;
-                for (DWORD sample_count = 0;
-                     sample_count < region_0_sample_count; sample_count++)
-                {
-                    running_sample_index =
-                        (running_sample_index + 1) % middle_c_period;
-
-                    i8 sample_value = 0;
-                    if (running_sample_index < half_middle_c_period)
-                    {
-                        sample_value = (i16)3000;
-                    }
-                    else
-                    {
-                        sample_value = (i16)-3000;
-                    }
-
-                    *sample_region_0++ = sample_value;
-                    *sample_region_0++ = sample_value;
-                }
-
-                i16 *sample_region_1 = (i16 *)region_1;
-
-                DWORD region_1_sample_count = region_1_bytes / bytes_per_sample;
-                for (DWORD sample_count = 0;
-                     sample_count < region_1_sample_count; sample_count++)
-                {
-                    running_sample_index =
-                        (running_sample_index + 1) % middle_c_period;
-
-                    i8 sample_value = 0;
-                    if (running_sample_index < half_middle_c_period)
-                    {
-                        sample_value = (i16)3000;
-                    }
-                    else
-                    {
-                        sample_value = (i16)3000;
-                    }
-
-                    *sample_region_1++ = sample_value;
-                    *sample_region_1++ = sample_value;
-                }
-
-                IDirectSoundBuffer_Unlock(g_secondary_buffer, region_0,
-                                          region_0_bytes, region_1,
-                                          region_1_bytes);
-            }
+            win32_fill_sound_buffer(&sound_output, write_lock_offset,
+                                    bytes_to_write);
         }
 
         win32_render_buffer_to_window(&g_backbuffer, device_context,
