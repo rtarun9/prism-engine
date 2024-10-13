@@ -43,6 +43,7 @@ typedef struct
 } win32_offscreen_buffer_t;
 
 global_variable win32_offscreen_buffer_t g_backbuffer = {0};
+global_variable LPDIRECTSOUNDBUFFER g_secondary_buffer = NULL;
 
 typedef struct
 {
@@ -50,7 +51,8 @@ typedef struct
     u32 height;
 } win32_window_dimensions_t;
 
-win32_window_dimensions_t win32_get_window_dimensions(const HWND window)
+internal win32_window_dimensions_t
+win32_get_window_dimensions(const HWND window)
 {
     win32_window_dimensions_t result = {0};
 
@@ -194,10 +196,10 @@ DEF_XINPUT_SET_STATE(xinput_set_state_stub)
 typedef DEF_XINPUT_GET_STATE(xinput_get_state_t);
 typedef DEF_XINPUT_SET_STATE(xinput_set_state_t);
 
-xinput_get_state_t *xinput_get_state = xinput_get_state_stub;
-xinput_set_state_t *xinput_set_state = xinput_set_state_stub;
+internal xinput_get_state_t *xinput_get_state = xinput_get_state_stub;
+internal xinput_set_state_t *xinput_set_state = xinput_set_state_stub;
 
-void win32_load_xinput_functions()
+internal void win32_load_xinput_functions()
 {
     HMODULE xinput_dll = LoadLibraryW(L"xinput1_4.dll");
     if (!xinput_dll)
@@ -224,10 +226,10 @@ DEF_DSOUND_CREATE(dsound_create_stub)
     return 0;
 }
 
-dsound_create_t *dsound_create = dsound_create_stub;
+internal dsound_create_t *dsound_create = dsound_create_stub;
 
-void win32_init_dsound(HWND window, u32 secondary_buffer_size,
-                       u32 samples_per_second)
+internal void win32_init_dsound(HWND window, u32 secondary_buffer_size,
+                                u32 samples_per_second)
 {
     HMODULE dsound_dll = LoadLibraryW(L"dsound.dll");
     if (dsound_dll)
@@ -268,7 +270,7 @@ void win32_init_dsound(HWND window, u32 secondary_buffer_size,
                     wave_format.wFormatTag = WAVE_FORMAT_PCM;
                     wave_format.nChannels = 2;
                     wave_format.nSamplesPerSec = samples_per_second;
-                    wave_format.wBitsPerSample = 8;
+                    wave_format.wBitsPerSample = 16;
                     wave_format.nBlockAlign =
                         (wave_format.nChannels * wave_format.wBitsPerSample) /
                         8;
@@ -279,8 +281,6 @@ void win32_init_dsound(HWND window, u32 secondary_buffer_size,
                     {
                         // Create the secondary buffer, which is the buffer data
                         // is actually written to.
-                        LPDIRECTSOUNDBUFFER secondary_buffer = NULL;
-
                         DSBUFFERDESC secondary_buffer_desc = {0};
                         secondary_buffer_desc.dwSize = sizeof(DSBUFFERDESC);
                         secondary_buffer_desc.dwBufferBytes =
@@ -290,7 +290,7 @@ void win32_init_dsound(HWND window, u32 secondary_buffer_size,
 
                         if (SUCCEEDED(IDirectSound_CreateSoundBuffer(
                                 direct_sound, &secondary_buffer_desc,
-                                &secondary_buffer, NULL)))
+                                &g_secondary_buffer, NULL)))
                         {
                             OutputDebugStringW(L"Created secondary buffer.\n");
                         }
@@ -334,11 +334,13 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
         return -1;
     }
 
-    const u32 bytes_per_sample = sizeof(u8);
+    // One byte for left channel, one byte for right channel.
+    const u32 bytes_per_sample = sizeof(u16) * 2;
     const u32 samples_per_second = 48000;
     const u32 secondary_buffer_size = bytes_per_sample * samples_per_second * 2;
 
     win32_init_dsound(window, secondary_buffer_size, samples_per_second);
+    IDirectSoundBuffer_Play(g_secondary_buffer, 0, 0, DSBPLAY_LOOPING);
 
     HDC device_context = GetDC(window);
 
@@ -346,6 +348,21 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
 
     u32 x_shift = 0;
     u32 y_shift = 0;
+
+    // Explanation of square wave.
+    // The frequency / hertz used in that of middle C, i.e 261.63 (I will be
+    // taking 256 because of familiarity).
+    // This means middle c oscilates from one peak to another 256 times a
+    // second.
+    u32 middle_c_frequency = 256;
+    // The wavelength will determine how many samples it takes to cover the
+    // above frequency.
+    u32 middle_c_period = samples_per_second / middle_c_frequency;
+
+    // Now, half of that value will be the amount of samples a 'up' wave is
+    // produced, and vice versa.
+    u32 half_middle_c_period = middle_c_period / 2;
+    u32 running_sample_index = 0;
 
     b32 quit = false;
     while (!quit)
@@ -418,7 +435,96 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
         win32_window_dimensions_t window_dimensions =
             win32_get_window_dimensions(window);
 
+        // Render gradient to the framebuffer.
         win32_render_gradient_to_framebuffer(&g_backbuffer, x_shift, y_shift);
+
+        // Fill secondary buffer (for audio).
+        DWORD current_play_cursor = 0;
+        DWORD current_write_cursor = 0;
+
+        if (SUCCEEDED(IDirectSoundBuffer_GetCurrentPosition(
+                g_secondary_buffer, &current_play_cursor,
+                &current_write_cursor)))
+        {
+            u32 write_lock_offset = (running_sample_index * bytes_per_sample) %
+                                    secondary_buffer_size;
+
+            DWORD bytes_to_write = 0;
+            if (write_lock_offset > current_play_cursor)
+            {
+                // bytes_to_write =
+                // secondary_buffer_size - write_lock_offset; // for region 0.
+                // bytes_to_write += current_play_cursor;         // for
+                // region 1.
+            }
+            else
+            {
+                bytes_to_write =
+                    current_play_cursor - write_lock_offset; // for region 0.
+            }
+
+            void *region_0 = 0;
+            DWORD region_0_bytes = 0;
+
+            void *region_1 = 0;
+            DWORD region_1_bytes = 0;
+
+            if (SUCCEEDED(IDirectSoundBuffer_Lock(
+                    g_secondary_buffer, write_lock_offset, bytes_to_write,
+                    &region_0, &region_0_bytes, &region_1, &region_1_bytes, 0)))
+            {
+                i16 *sample_region_0 = (i16 *)region_0;
+
+                DWORD region_0_sample_count = region_0_bytes / bytes_per_sample;
+                for (DWORD sample_count = 0;
+                     sample_count < region_0_sample_count; sample_count++)
+                {
+                    running_sample_index =
+                        (running_sample_index + 1) % middle_c_period;
+
+                    i8 sample_value = 0;
+                    if (running_sample_index < half_middle_c_period)
+                    {
+                        sample_value = (i16)3000;
+                    }
+                    else
+                    {
+                        sample_value = (i16)-3000;
+                    }
+
+                    *sample_region_0++ = sample_value;
+                    *sample_region_0++ = sample_value;
+                }
+
+                i16 *sample_region_1 = (i16 *)region_1;
+
+                DWORD region_1_sample_count = region_1_bytes / bytes_per_sample;
+                for (DWORD sample_count = 0;
+                     sample_count < region_1_sample_count; sample_count++)
+                {
+                    running_sample_index =
+                        (running_sample_index + 1) % middle_c_period;
+
+                    i8 sample_value = 0;
+                    if (running_sample_index < half_middle_c_period)
+                    {
+                        sample_value = (i16)3000;
+                    }
+                    else
+                    {
+                        sample_value = (i16)3000;
+                    }
+
+                    *sample_region_1++ = sample_value;
+                    *sample_region_1++ = sample_value;
+                }
+
+                IDirectSoundBuffer_Unlock(g_secondary_buffer, region_0,
+                                          region_0_bytes, region_1,
+                                          region_1_bytes);
+            }
+        }
+
         win32_render_buffer_to_window(&g_backbuffer, device_context,
                                       window_dimensions.width,
                                       window_dimensions.height);
