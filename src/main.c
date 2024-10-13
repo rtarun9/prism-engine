@@ -4,6 +4,7 @@
 
 #include <Windows.h>
 
+#include <dsound.h>
 #include <xinput.h>
 
 #include <stdint.h>
@@ -175,33 +176,34 @@ internal LRESULT CALLBACK win32_window_proc(HWND window, UINT message,
     return result;
 }
 
-DWORD WINAPI XInputGetState_(DWORD dw_user_index, XINPUT_STATE *state);
-DWORD WINAPI XInputSetState_(DWORD dw_user_index, XINPUT_VIBRATION *vibration);
-
-#define def_xinput_get_state(name)                                             \
+#define DEF_XINPUT_GET_STATE(name)                                             \
     DWORD WINAPI name(DWORD dw_user_index, XINPUT_STATE *state)
-#define def_xinput_set_state(name)                                             \
+#define DEF_XINPUT_SET_STATE(name)                                             \
     DWORD WINAPI name(DWORD dw_user_index, XINPUT_VIBRATION *vibration)
 
-def_xinput_get_state(xinput_get_state_stub)
+DEF_XINPUT_GET_STATE(xinput_get_state_stub)
 {
-    return 0;
+    return ERROR_DEVICE_NOT_CONNECTED;
 }
 
-def_xinput_set_state(xinput_set_state_stub)
+DEF_XINPUT_SET_STATE(xinput_set_state_stub)
 {
-    return 0;
+    return ERROR_DEVICE_NOT_CONNECTED;
 }
 
-typedef def_xinput_get_state(xinput_get_state_t);
-typedef def_xinput_set_state(xinput_set_state_t);
+typedef DEF_XINPUT_GET_STATE(xinput_get_state_t);
+typedef DEF_XINPUT_SET_STATE(xinput_set_state_t);
 
 xinput_get_state_t *xinput_get_state = xinput_get_state_stub;
 xinput_set_state_t *xinput_set_state = xinput_set_state_stub;
 
-void load_xinput_functions()
+void win32_load_xinput_functions()
 {
-    HMODULE xinput_dll = LoadLibraryW(L"xinput1_3.dll");
+    HMODULE xinput_dll = LoadLibraryW(L"xinput1_4.dll");
+    if (!xinput_dll)
+    {
+        xinput_dll = LoadLibraryW(L"xinput1_3.dll");
+    }
 
     if (xinput_dll)
     {
@@ -212,10 +214,97 @@ void load_xinput_functions()
     }
 }
 
+#define DEF_DSOUND_CREATE(name)                                                \
+    HRESULT WINAPI name(LPCGUID pcGuidDevice, LPDIRECTSOUND *ppDS,             \
+                        LPUNKNOWN pUnkOuter)
+typedef DEF_DSOUND_CREATE(dsound_create_t);
+
+DEF_DSOUND_CREATE(dsound_create_stub)
+{
+    return 0;
+}
+
+dsound_create_t *dsound_create = dsound_create_stub;
+
+void win32_init_dsound(HWND window, u32 secondary_buffer_size,
+                       u32 samples_per_second)
+{
+    HMODULE dsound_dll = LoadLibraryW(L"dsound.dll");
+    if (dsound_dll)
+    {
+        // Load the required functions to create a dsound object.
+        dsound_create =
+            (dsound_create_t *)GetProcAddress(dsound_dll, "DirectSoundCreate");
+
+        LPDIRECTSOUND direct_sound = NULL;
+        if (dsound_create && SUCCEEDED(dsound_create(0, &direct_sound, 0)))
+        {
+            // Set the cooperative level. DSSCL_PRIORITY must be used if the
+            // application wants to call the SetFormat function.
+            if (SUCCEEDED(IDirectSound_SetCooperativeLevel(direct_sound, window,
+                                                           DSSCL_PRIORITY)))
+            {
+                // Create a primary buffer. This is a relic to the old days,
+                // where you basically wrote directly to the sound card.
+                // It is created just to make sure that audio is not up/down
+                // sampled by the system.
+                LPDIRECTSOUNDBUFFER primary_buffer = NULL;
+
+                DSBUFFERDESC primary_buffer_desc = {0};
+                primary_buffer_desc.dwSize = sizeof(DSBUFFERDESC);
+                primary_buffer_desc.dwFlags = DSBCAPS_PRIMARYBUFFER;
+                primary_buffer_desc.dwBufferBytes = 0;
+                primary_buffer_desc.lpwfxFormat = NULL;
+                if (SUCCEEDED(IDirectSound_CreateSoundBuffer(
+                        direct_sound, &primary_buffer_desc, &primary_buffer,
+                        NULL)))
+
+                {
+                    // Set the wave format using the primary buffer.
+                    // Use the Pulse code modulation (PCM) format as its the
+                    // encoding format used for uncompressed digital audio.
+                    // 2 channels are used as we want stereo audio.
+                    WAVEFORMATEX wave_format = {0};
+                    wave_format.wFormatTag = WAVE_FORMAT_PCM;
+                    wave_format.nChannels = 2;
+                    wave_format.nSamplesPerSec = samples_per_second;
+                    wave_format.wBitsPerSample = 8;
+                    wave_format.nBlockAlign =
+                        (wave_format.nChannels * wave_format.wBitsPerSample) /
+                        8;
+                    wave_format.nAvgBytesPerSec =
+                        wave_format.nSamplesPerSec * wave_format.nBlockAlign;
+                    if (SUCCEEDED(IDirectSoundBuffer_SetFormat(primary_buffer,
+                                                               &wave_format)))
+                    {
+                        // Create the secondary buffer, which is the buffer data
+                        // is actually written to.
+                        LPDIRECTSOUNDBUFFER secondary_buffer = NULL;
+
+                        DSBUFFERDESC secondary_buffer_desc = {0};
+                        secondary_buffer_desc.dwSize = sizeof(DSBUFFERDESC);
+                        secondary_buffer_desc.dwBufferBytes =
+                            secondary_buffer_size;
+                        secondary_buffer_desc.lpwfxFormat = &wave_format;
+                        secondary_buffer_desc.guid3DAlgorithm = DS3DALG_DEFAULT;
+
+                        if (SUCCEEDED(IDirectSound_CreateSoundBuffer(
+                                direct_sound, &secondary_buffer_desc,
+                                &secondary_buffer, NULL)))
+                        {
+                            OutputDebugStringW(L"Created secondary buffer.\n");
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
                     PWSTR command_line, int command_show)
 {
-    load_xinput_functions();
+    win32_load_xinput_functions();
 
     // Register a window class : set of behaviors that several windows might
     // have in common (required even if only a single window is created by the
@@ -244,6 +333,12 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
         // TODO: Logging.
         return -1;
     }
+
+    const u32 bytes_per_sample = sizeof(u8);
+    const u32 samples_per_second = 48000;
+    const u32 secondary_buffer_size = bytes_per_sample * samples_per_second * 2;
+
+    win32_init_dsound(window, secondary_buffer_size, samples_per_second);
 
     HDC device_context = GetDC(window);
 
