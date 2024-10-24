@@ -2,40 +2,17 @@
 #define UNICODE
 #endif
 
+#include "game.c"
+#include "game.h"
+
 #include <Windows.h>
 
 #include <dsound.h>
 #include <xinput.h>
 
-#include <math.h>
-#include <stdint.h>
-
-// Typedefs to primitive datatypes.
-typedef int8_t i8;
-typedef int16_t i16;
-typedef int32_t i32;
-typedef int64_t i64;
-
-typedef uint8_t u8;
-typedef uint16_t u16;
-typedef uint32_t u32;
-typedef uint64_t u64;
-
-typedef i32 b32;
-
-typedef float f32;
-typedef double f64;
-
-#define pi32 3.14159
-
-#define true 1
-#define false 0
-
-// #defines to make usage of 'static' based on purpose more clear.
-#define internal static
-#define global_variable static
-#define local_persist static
-
+// NOTE: even though bitmap info has the width and the height, because a top
+// down framebuffer is used, the height is inverted. Instead of inverting height
+// each time it is required, 2 separate fields for width and height are created.
 typedef struct
 {
     u32 *framebuffer_memory;
@@ -55,7 +32,7 @@ typedef struct
 } win32_window_dimensions_t;
 
 internal win32_window_dimensions_t
-win32_get_window_dimensions(const HWND window)
+win32_get_window_client_dimensions(const HWND window)
 {
     win32_window_dimensions_t result = {0};
 
@@ -75,31 +52,6 @@ internal void win32_render_buffer_to_window(
     StretchDIBits(device_context, 0, 0, window_width, window_height, 0, 0,
                   buffer->width, buffer->height, buffer->framebuffer_memory,
                   &buffer->bitmap_info, DIB_RGB_COLORS, SRCCOPY);
-}
-
-internal void win32_render_gradient_to_framebuffer(
-    win32_offscreen_buffer_t *const buffer, const u32 x_shift,
-    const u32 y_shift)
-{
-    u32 *row = buffer->framebuffer_memory;
-    u32 pitch = buffer->width;
-
-    for (u32 y = 0; y < buffer->height; y++)
-    {
-        u32 *pixel = row;
-        for (u32 x = 0; x < buffer->width; x++)
-        {
-            u8 red = ((x + x_shift) & 0xff);
-            u8 blue = ((y + y_shift) & 0xff);
-            u8 green = 0;
-            u8 alpha = 0xff;
-
-            // Layout in memory is : BB GG RR XX
-            *pixel++ = blue | (green << 8) | (red << 16) | (alpha << 24);
-        }
-
-        row += pitch;
-    }
 }
 
 internal void win32_resize_framebuffer(win32_offscreen_buffer_t *const buffer,
@@ -143,13 +95,13 @@ internal LRESULT CALLBACK win32_window_proc(HWND window, UINT message,
 
     case WM_PAINT: {
         PAINTSTRUCT paint = {0};
-        HDC device_context = BeginPaint(window, &paint);
+        const HDC device_context = BeginPaint(window, &paint);
 
-        win32_window_dimensions_t window_dimensions =
-            win32_get_window_dimensions(window);
+        const win32_window_dimensions_t window_dimensions =
+            win32_get_window_client_dimensions(window);
 
         // NOTE: In WM_PAINT, the backbuffer is NOT being rendered to, but the
-        // window is being rendered alone. Check if this is suitable.
+        // window is being rendered to directly.
         win32_render_buffer_to_window(&g_backbuffer, device_context,
                                       window_dimensions.width,
                                       window_dimensions.height);
@@ -161,14 +113,14 @@ internal LRESULT CALLBACK win32_window_proc(HWND window, UINT message,
     break;
 
     case WM_CLOSE: {
-        OutputDebugStringW(L"WM_CLOSE\n");
         DestroyWindow(window);
+        OutputDebugStringW(L"WM_CLOSE\n");
     }
     break;
 
     case WM_DESTROY: {
-        OutputDebugStringW(L"WM_DESTROY\n");
         PostQuitMessage(0);
+        OutputDebugStringW(L"WM_DESTROY\n");
     }
     break;
 
@@ -220,8 +172,9 @@ internal void win32_load_xinput_functions()
 }
 
 #define DEF_DSOUND_CREATE(name)                                                \
-    HRESULT WINAPI name(LPCGUID pcGuidDevice, LPDIRECTSOUND *ppDS,             \
-                        LPUNKNOWN pUnkOuter)
+    HRESULT WINAPI name(LPCGUID guid_device,                                   \
+                        LPDIRECTSOUND *direct_sound_object,                    \
+                        LPUNKNOWN unk_outer_ptr)
 typedef DEF_DSOUND_CREATE(dsound_create_t);
 
 DEF_DSOUND_CREATE(dsound_create_stub)
@@ -231,10 +184,11 @@ DEF_DSOUND_CREATE(dsound_create_stub)
 
 internal dsound_create_t *dsound_create = dsound_create_stub;
 
-internal void win32_init_dsound(HWND window, u32 secondary_buffer_size,
-                                u32 samples_per_second)
+internal void win32_init_dsound(const HWND window,
+                                const u32 secondary_buffer_size,
+                                const u32 samples_per_second)
 {
-    HMODULE dsound_dll = LoadLibraryW(L"dsound.dll");
+    const HMODULE dsound_dll = LoadLibraryW(L"dsound.dll");
     if (dsound_dll)
     {
         // Load the required functions to create a dsound object.
@@ -258,8 +212,6 @@ internal void win32_init_dsound(HWND window, u32 secondary_buffer_size,
                 DSBUFFERDESC primary_buffer_desc = {0};
                 primary_buffer_desc.dwSize = sizeof(DSBUFFERDESC);
                 primary_buffer_desc.dwFlags = DSBCAPS_PRIMARYBUFFER;
-                primary_buffer_desc.dwBufferBytes = 0;
-                primary_buffer_desc.lpwfxFormat = NULL;
                 if (SUCCEEDED(IDirectSound_CreateSoundBuffer(
                         direct_sound, &primary_buffer_desc, &primary_buffer,
                         NULL)))
@@ -289,7 +241,6 @@ internal void win32_init_dsound(HWND window, u32 secondary_buffer_size,
                         secondary_buffer_desc.dwBufferBytes =
                             secondary_buffer_size;
                         secondary_buffer_desc.lpwfxFormat = &wave_format;
-                        secondary_buffer_desc.guid3DAlgorithm = DS3DALG_DEFAULT;
 
                         if (SUCCEEDED(IDirectSound_CreateSoundBuffer(
                                 direct_sound, &secondary_buffer_desc,
@@ -312,13 +263,28 @@ typedef struct
     u32 secondary_buffer_size;
     u32 max_volume;
 
+    // Frequency is the number of cycles completed in a second. (a real world
+    // unit).
     u32 frequency;
+
+    // Period is the duration required to complete a single wave cycle.
     u32 period_in_samples;
+
+    // A monotonically increasing value that represents the index of audio
+    // sample outputted.
     u32 running_sample_index;
+
+    // To reduce latency, each frame only a certain number of samples are set.
+    u32 samples_to_write_per_frame;
+
+    // The position in the sine wave at any given point of time. This is used as
+    // the program currently outputs a sine wave.
+    f32 t_sine;
 } win32_sound_output_t;
 
 internal void win32_fill_sound_buffer(win32_sound_output_t *sound_output,
-                                      u32 write_lock_offset, u32 bytes_to_write)
+                                      u32 write_cursor_lock_offset,
+                                      u32 bytes_to_write)
 {
     void *region_0 = 0;
     DWORD region_0_bytes = 0;
@@ -327,26 +293,31 @@ internal void win32_fill_sound_buffer(win32_sound_output_t *sound_output,
     DWORD region_1_bytes = 0;
 
     if (SUCCEEDED(IDirectSoundBuffer_Lock(
-            g_secondary_buffer, write_lock_offset, bytes_to_write, &region_0,
-            &region_0_bytes, &region_1, &region_1_bytes, 0)))
+            g_secondary_buffer, write_cursor_lock_offset, bytes_to_write,
+            &region_0, &region_0_bytes, &region_1, &region_1_bytes, 0)))
     {
         i16 *sample_region_0 = (i16 *)region_0;
 
         DWORD region_0_sample_count =
             region_0_bytes / sound_output->bytes_per_sample;
+
         for (DWORD sample_count = 0; sample_count < region_0_sample_count;
              sample_count++)
         {
-            sound_output->running_sample_index++;
+
+            f32 sin_value = sound_output->t_sine;
 
             i16 sample_value =
-                (i16)(sinf(2.0f * pi32 *
-                           ((f32)sound_output->running_sample_index /
-                            (f32)sound_output->period_in_samples)) *
-                      sound_output->max_volume);
+                (i16)(sinf(sin_value) * sound_output->max_volume);
 
+            // Assigning audio sample value for left and right channel.
             *sample_region_0++ = sample_value;
             *sample_region_0++ = sample_value;
+
+            sound_output->t_sine +=
+                (2.0f * pi32 * 1.0f) / (f32)sound_output->period_in_samples;
+
+            sound_output->running_sample_index++;
         }
 
         i16 *sample_region_1 = (i16 *)region_1;
@@ -356,16 +327,18 @@ internal void win32_fill_sound_buffer(win32_sound_output_t *sound_output,
         for (DWORD sample_count = 0; sample_count < region_1_sample_count;
              sample_count++)
         {
-            sound_output->running_sample_index++;
+            f32 sin_value = sinf(sound_output->t_sine);
 
             i16 sample_value =
-                (i16)(sinf(2.0f * pi32 *
-                           ((f32)sound_output->running_sample_index /
-                            (f32)sound_output->period_in_samples)) *
-                      sound_output->max_volume);
+                (i16)(sinf(sin_value) * sound_output->max_volume);
 
             *sample_region_1++ = sample_value;
             *sample_region_1++ = sample_value;
+
+            sound_output->t_sine +=
+                (2.0f * pi32 * 1.0f) / (f32)sound_output->period_in_samples;
+
+            sound_output->running_sample_index++;
         }
 
         IDirectSoundBuffer_Unlock(g_secondary_buffer, region_0, region_0_bytes,
@@ -395,7 +368,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
     RegisterClassExW(&window_class);
 
     // Create the actual window.
-    HWND window = CreateWindowExW(
+    const HWND window = CreateWindowExW(
         0, window_class.lpszClassName, L"prism-engine", WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT, CW_USEDEFAULT, 1920, 1080, NULL, NULL, instance, NULL);
     ShowWindow(window, SW_SHOWNORMAL);
@@ -406,30 +379,51 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
         return -1;
     }
 
+    // NOTE: A 2 second buffer is created.
     win32_sound_output_t sound_output = {0};
-    sound_output.bytes_per_sample = sizeof(u16) * 2;
+    sound_output.bytes_per_sample = sizeof(i16) * 2;
     sound_output.samples_per_second = 48000;
     sound_output.secondary_buffer_size =
         2 * sound_output.samples_per_second * sound_output.bytes_per_sample;
     sound_output.max_volume = 3000;
-    sound_output.frequency = 256;
-    sound_output.period_in_samples = sound_output.samples_per_second / 256;
+    sound_output.frequency = 1000;
+    sound_output.period_in_samples =
+        sound_output.samples_per_second / sound_output.frequency;
     sound_output.running_sample_index = 0;
+    sound_output.t_sine = 0;
+    sound_output.samples_to_write_per_frame =
+        sound_output.samples_per_second / 16;
 
     win32_init_dsound(window, sound_output.secondary_buffer_size,
                       sound_output.samples_per_second);
+
     IDirectSoundBuffer_Play(g_secondary_buffer, 0, 0, DSBPLAY_LOOPING);
 
-    HDC device_context = GetDC(window);
+    const HDC device_context = GetDC(window);
 
     win32_resize_framebuffer(&g_backbuffer, 1080, 720);
     win32_fill_sound_buffer(&sound_output, 0,
-                            sound_output.secondary_buffer_size);
+                            sound_output.samples_to_write_per_frame *
+                                sound_output.bytes_per_sample);
 
     u32 x_shift = 0;
     u32 y_shift = 0;
 
     b32 quit = false;
+
+    // Get the number of counts that occur in a second.
+    LARGE_INTEGER perf_frequency = {0};
+    QueryPerformanceFrequency(&perf_frequency);
+
+    // Get the current value of performance counter.
+    // This can be used to find number of 'counts' per frame. Then, by dividing
+    // with perf_frequency, we can find how long it took (in seconds) to render
+    // this frame.
+    LARGE_INTEGER last_counter_value = {0};
+    QueryPerformanceCounter(&last_counter_value);
+
+    u64 last_timestamp_value = __rdtsc();
+
     while (!quit)
     {
         BYTE keyboard_state[256] = {0};
@@ -460,9 +454,22 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
             b32 key_d = keyboard_state['D'] & 0x80;
 
             b32 key_up = keyboard_state[VK_UP] & 0x80;
-            b32 key_down = keyboard_state[VK_RIGHT] & 0x80;
+            b32 key_down = keyboard_state[VK_DOWN] & 0x80;
             b32 key_left = keyboard_state[VK_LEFT] & 0x80;
             b32 key_right = keyboard_state[VK_RIGHT] & 0x80;
+
+            if (key_up)
+            {
+                sound_output.frequency++;
+                sound_output.period_in_samples =
+                    sound_output.samples_per_second / sound_output.frequency;
+            }
+            else if (key_down)
+            {
+                sound_output.frequency--;
+                sound_output.period_in_samples =
+                    sound_output.samples_per_second / sound_output.frequency;
+            }
         }
 
         // Get controller input (via xinput).
@@ -478,8 +485,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
 
                 b32 dpad_up = game_pad->wButtons & XINPUT_GAMEPAD_DPAD_UP;
                 b32 dpad_down = game_pad->wButtons & XINPUT_GAMEPAD_DPAD_DOWN;
-                b32 dpad_left = game_pad->wButtons & XINPUT_GAMEPAD_DPAD_LEFT;
-                b32 dpad_right = game_pad->wButtons & XINPUT_GAMEPAD_DPAD_RIGHT;
+                b32 dpad_left = game_pad->wButtons & XINPUT_GAMEPAD_DPAD_RIGHT;
 
                 b32 start = game_pad->wButtons & XINPUT_GAMEPAD_START;
                 b32 back = game_pad->wButtons & XINPUT_GAMEPAD_BACK;
@@ -495,13 +501,16 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
             }
         }
 
-        RECT client_rect = {0};
+        const win32_window_dimensions_t window_dimensions =
+            win32_get_window_client_dimensions(window);
 
-        win32_window_dimensions_t window_dimensions =
-            win32_get_window_dimensions(window);
+        // Render and update the game.
+        game_offscreen_buffer_t game_offscreen_buffer = {0};
+        game_offscreen_buffer.framebuffer_memory = g_backbuffer.framebuffer_memory;
+        game_offscreen_buffer.width = g_backbuffer.width;
+        game_offscreen_buffer.height = g_backbuffer.height;
 
-        // Render gradient to the framebuffer.
-        win32_render_gradient_to_framebuffer(&g_backbuffer, x_shift, y_shift);
+        game_update_and_render(&game_offscreen_buffer);
 
         // Fill secondary buffer (for audio).
         DWORD current_play_cursor = 0;
@@ -511,21 +520,26 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
                 g_secondary_buffer, &current_play_cursor,
                 &current_write_cursor)))
         {
+            u32 target_lock_offset = (current_play_cursor +
+                                      (sound_output.samples_to_write_per_frame *
+                                       sound_output.bytes_per_sample)) %
+                                     sound_output.secondary_buffer_size;
+
             u32 write_lock_offset = (sound_output.running_sample_index *
                                      sound_output.bytes_per_sample) %
                                     sound_output.secondary_buffer_size;
 
             DWORD bytes_to_write = 0;
-            if (write_lock_offset > current_play_cursor)
+            if (write_lock_offset > target_lock_offset)
             {
                 bytes_to_write = sound_output.secondary_buffer_size -
-                                 write_lock_offset;    // for region 0.
-                bytes_to_write += current_play_cursor; // for region 1.
+                                 write_lock_offset;   // for region 0.
+                bytes_to_write += target_lock_offset; // for region 1.
             }
             else
             {
                 bytes_to_write =
-                    current_play_cursor - write_lock_offset; // for region 0.
+                    target_lock_offset - write_lock_offset; // for region 0.
             }
 
             win32_fill_sound_buffer(&sound_output, write_lock_offset,
@@ -538,6 +552,29 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
 
         x_shift++;
         y_shift += 2;
+
+        LARGE_INTEGER end_counter_value = {0};
+        QueryPerformanceCounter(&end_counter_value);
+
+        i32 counts_for_frame =
+            (end_counter_value.QuadPart - last_counter_value.QuadPart);
+        f32 milli_seconds_for_frame =
+            (1000.0f * counts_for_frame) / (f32)perf_frequency.QuadPart;
+
+        u64 end_timestamp_value = __rdtsc();
+        i32 clock_cycles_per_frame = end_timestamp_value - last_timestamp_value;
+
+        // 1 frames time -> milli_seconds_for_frame = 1 / seconds in dimension.
+        // To find the frames per second, we do -> 1 / time for single frame.
+        i32 fps = 1000 / milli_seconds_for_frame;
+
+        char text[256];
+        sprintf(text, "MS for frame : %f ms, FPS : %d, Clocks per frame : %d\n",
+                milli_seconds_for_frame, fps, clock_cycles_per_frame);
+        OutputDebugStringA(text);
+
+        last_counter_value = end_counter_value;
+        last_timestamp_value = end_timestamp_value;
     }
 
     return 0;
