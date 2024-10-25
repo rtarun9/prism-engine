@@ -284,7 +284,8 @@ typedef struct
 
 internal void win32_fill_sound_buffer(win32_sound_output_t *sound_output,
                                       u32 write_cursor_lock_offset,
-                                      u32 bytes_to_write)
+                                      u32 bytes_to_write,
+                                      i16 *game_sound_buffer_memory)
 {
     void *region_0 = 0;
     DWORD region_0_bytes = 0;
@@ -296,6 +297,8 @@ internal void win32_fill_sound_buffer(win32_sound_output_t *sound_output,
             g_secondary_buffer, write_cursor_lock_offset, bytes_to_write,
             &region_0, &region_0_bytes, &region_1, &region_1_bytes, 0)))
     {
+        i16 *game_sound_buffer_region = game_sound_buffer_memory;
+
         i16 *sample_region_0 = (i16 *)region_0;
 
         DWORD region_0_sample_count =
@@ -304,20 +307,9 @@ internal void win32_fill_sound_buffer(win32_sound_output_t *sound_output,
         for (DWORD sample_count = 0; sample_count < region_0_sample_count;
              sample_count++)
         {
-
-            f32 sin_value = sound_output->t_sine;
-
-            i16 sample_value =
-                (i16)(sinf(sin_value) * sound_output->max_volume);
-
             // Assigning audio sample value for left and right channel.
-            *sample_region_0++ = sample_value;
-            *sample_region_0++ = sample_value;
-
-            sound_output->t_sine +=
-                (2.0f * pi32 * 1.0f) / (f32)sound_output->period_in_samples;
-
-            sound_output->running_sample_index++;
+            *sample_region_0++ = *game_sound_buffer_region++;
+            *sample_region_0++ = *game_sound_buffer_region++;
         }
 
         i16 *sample_region_1 = (i16 *)region_1;
@@ -327,18 +319,8 @@ internal void win32_fill_sound_buffer(win32_sound_output_t *sound_output,
         for (DWORD sample_count = 0; sample_count < region_1_sample_count;
              sample_count++)
         {
-            f32 sin_value = sinf(sound_output->t_sine);
-
-            i16 sample_value =
-                (i16)(sinf(sin_value) * sound_output->max_volume);
-
-            *sample_region_1++ = sample_value;
-            *sample_region_1++ = sample_value;
-
-            sound_output->t_sine +=
-                (2.0f * pi32 * 1.0f) / (f32)sound_output->period_in_samples;
-
-            sound_output->running_sample_index++;
+            *sample_region_1++ = *game_sound_buffer_region++;
+            *sample_region_1++ = *game_sound_buffer_region++;
         }
 
         IDirectSoundBuffer_Unlock(g_secondary_buffer, region_0, region_0_bytes,
@@ -394,6 +376,12 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
     sound_output.samples_to_write_per_frame =
         sound_output.samples_per_second / 16;
 
+    i16 *game_sound_buffer_memory =
+        (i16 *)VirtualAlloc(0,
+                            10 * sound_output.samples_to_write_per_frame *
+                                sound_output.bytes_per_sample,
+                            MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+
     win32_init_dsound(window, sound_output.secondary_buffer_size,
                       sound_output.samples_per_second);
 
@@ -402,9 +390,6 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
     const HDC device_context = GetDC(window);
 
     win32_resize_framebuffer(&g_backbuffer, 1080, 720);
-    win32_fill_sound_buffer(&sound_output, 0,
-                            sound_output.samples_to_write_per_frame *
-                                sound_output.bytes_per_sample);
 
     u32 x_shift = 0;
     u32 y_shift = 0;
@@ -506,11 +491,17 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
 
         // Render and update the game.
         game_offscreen_buffer_t game_offscreen_buffer = {0};
-        game_offscreen_buffer.framebuffer_memory = g_backbuffer.framebuffer_memory;
+        game_offscreen_buffer.framebuffer_memory =
+            g_backbuffer.framebuffer_memory;
         game_offscreen_buffer.width = g_backbuffer.width;
         game_offscreen_buffer.height = g_backbuffer.height;
 
-        game_update_and_render(&game_offscreen_buffer);
+        game_sound_buffer_t game_sound_buffer = {0};
+        game_sound_buffer.buffer = game_sound_buffer_memory;
+        game_sound_buffer.period_in_samples = sound_output.period_in_samples;
+
+        game_update_and_render(&game_offscreen_buffer, &game_sound_buffer,
+                               sound_output.samples_to_write_per_frame);
 
         // Fill secondary buffer (for audio).
         DWORD current_play_cursor = 0;
@@ -520,6 +511,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
                 g_secondary_buffer, &current_play_cursor,
                 &current_write_cursor)))
         {
+
             u32 target_lock_offset = (current_play_cursor +
                                       (sound_output.samples_to_write_per_frame *
                                        sound_output.bytes_per_sample)) %
@@ -530,7 +522,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
                                     sound_output.secondary_buffer_size;
 
             DWORD bytes_to_write = 0;
-            if (write_lock_offset > target_lock_offset)
+            if (write_lock_offset >= target_lock_offset)
             {
                 bytes_to_write = sound_output.secondary_buffer_size -
                                  write_lock_offset;   // for region 0.
@@ -543,7 +535,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
             }
 
             win32_fill_sound_buffer(&sound_output, write_lock_offset,
-                                    bytes_to_write);
+                                    bytes_to_write, game_sound_buffer_memory);
         }
 
         win32_render_buffer_to_window(&g_backbuffer, device_context,

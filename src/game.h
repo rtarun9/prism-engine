@@ -41,4 +41,10 @@ typedef struct
     u32 height;
 } game_offscreen_buffer_t;
 
+typedef struct
+{
+    i16 *buffer;
+    u32 period_in_samples;
+} game_sound_buffer_t;
+
 #endif
