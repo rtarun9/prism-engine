@@ -9,8 +9,9 @@ pushd build
 :: Od is to disable optimizations (in debug mode)
 :: fp:precise : Precise floating point model, with predictable results.
 :: Fe : Specify name of executable.
+:: D : Defines macros.
 
-cl.exe /Od /Zi /fp:precise ../src/win32_main.c /Fe:game.exe user32.lib gdi32.lib
+cl.exe /DPRISM_DEBUG /Od /Zi /fp:precise ../src/win32_main.c /Fe:game.exe user32.lib gdi32.lib
 game.exe
 popd
 

@@ -7,6 +7,16 @@
 
 // NOTE: Move this over to a common header file.
 
+#ifdef PRISM_DEBUG
+#define ASSERT(x)                                                              \
+    if (!x)                                                                    \
+    {                                                                          \
+        __debugbreak();                                                        \
+    }
+#else
+#define ASSERT(x)
+#endif
+
 // Typedefs to primitive datatypes.
 typedef int8_t i8;
 typedef int16_t i16;
@@ -43,6 +53,7 @@ typedef struct
 
 typedef struct
 {
+    // buffer is a in-out parameter.
     i16 *buffer;
     u32 period_in_samples;
 } game_sound_buffer_t;
