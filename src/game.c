@@ -1,4 +1,5 @@
 #include "game.h"
+#include "common.h"
 
 // The game outputs to a single buffer that is always linear.
 // The platform layer takes care of intricacies like circular audio buffers
@@ -11,12 +12,15 @@ internal void game_output_sound_buffer(
     local_persist f32 t_sine = 0;
     const u32 max_volume = 2000;
 
+    const u32 frequency = 256;
+    const u32 period_in_samples = sound_buffer->samples_per_second / frequency;
+
     i16 *sample_region = (i16 *)sound_buffer->buffer;
 
     for (u32 sample_count = 0; sample_count < sound_buffer->samples_to_output;
          sample_count++)
     {
-        t_sine += (2.0f * pi32 * 1.0f) / (f32)sound_buffer->period_in_samples;
+        t_sine += (2.0f * pi32 * 1.0f) / period_in_samples;
 
         i16 sample_value = (i16)(sinf(t_sine) * max_volume);
 
@@ -29,12 +33,9 @@ internal void game_output_sound_buffer(
 }
 
 internal void game_render_gradient_to_framebuffer(
-    game_offscreen_buffer_t *const buffer)
+    game_offscreen_buffer_t *const buffer, const i32 x_shift, const i32 y_shift)
 {
     ASSERT(buffer);
-
-    local_persist u32 x_shift = 0;
-    local_persist u32 y_shift = 0;
 
     u32 *row = buffer->framebuffer_memory;
     u32 pitch = buffer->width;
@@ -55,17 +56,30 @@ internal void game_render_gradient_to_framebuffer(
 
         row += pitch;
     }
-
-    x_shift++;
 }
 
 internal void game_update_and_render(
     game_offscreen_buffer_t *const restrict game_offscreen_buffer,
-    game_sound_buffer_t *const restrict game_sound_buffer)
+    game_sound_buffer_t *const restrict game_sound_buffer,
+    game_input_t *const restrict game_input)
 {
     ASSERT(game_offscreen_buffer);
     ASSERT(game_sound_buffer);
 
+    local_persist i32 x_shift = 0;
+    local_persist i32 y_shift = 0;
+
+    if (game_input->keyboard_state.key_w.is_key_down)
+    {
+        x_shift++;
+    }
+
+    if (game_input->keyboard_state.key_s.is_key_down)
+    {
+        x_shift--;
+    }
+
     game_output_sound_buffer(game_sound_buffer);
-    game_render_gradient_to_framebuffer(game_offscreen_buffer);
+    game_render_gradient_to_framebuffer(game_offscreen_buffer, x_shift,
+                                        y_shift);
 }

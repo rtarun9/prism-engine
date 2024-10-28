@@ -222,13 +222,6 @@ typedef struct
     u32 samples_per_second;
     u32 secondary_buffer_size;
 
-    // Frequency is the number of cycles completed in a second. (a real world
-    // unit).
-    u32 frequency;
-
-    // Period is the duration required to complete a single wave cycle.
-    u32 period_in_samples;
-
     // A monotonically increasing value that represents the index of audio
     // sample outputted.
     u32 running_sample_index;
@@ -263,6 +256,7 @@ internal void win32_clear_sound_buffer(win32_sound_output_t *sound_output)
                                   NULL, unused_region_1_bytes);
     }
 }
+
 internal void win32_fill_sound_buffer(win32_sound_output_t *sound_output,
                                       u32 write_cursor_lock_offset,
                                       u32 bytes_to_write,
@@ -345,6 +339,16 @@ internal LRESULT CALLBACK win32_window_proc(HWND window, UINT message,
     switch (message)
     {
 
+    case WM_KEYDOWN:
+    case WM_KEYUP:
+    case WM_SYSKEYDOWN:
+    case WM_SYSKEYUP: {
+        ASSERT(
+            0 &&
+            "Key up and key down should not be handled by the window proc!!!");
+    }
+    break;
+
     case WM_PAINT: {
         PAINTSTRUCT paint = {0};
         const HDC device_context = BeginPaint(window, &paint);
@@ -423,9 +427,6 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
     sound_output.samples_per_second = 48000;
     sound_output.secondary_buffer_size =
         sound_output.samples_per_second * sound_output.bytes_per_sample;
-    sound_output.frequency = 256;
-    sound_output.period_in_samples =
-        sound_output.samples_per_second / sound_output.frequency;
     sound_output.running_sample_index = 0;
     sound_output.samples_to_write_per_frame =
         sound_output.samples_per_second / 20;
@@ -459,6 +460,12 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
 
     u64 last_timestamp_value = __rdtsc();
 
+    game_input_t prev_game_input = {0};
+    game_input_t current_game_input = {0};
+
+    game_input_t *prev_game_input_ptr = &prev_game_input;
+    game_input_t *current_game_input_ptr = &current_game_input;
+
     while (!quit)
     {
         BYTE keyboard_state[256] = {0};
@@ -468,11 +475,18 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
         {
             TranslateMessage(&message);
             DispatchMessageW(&message);
-        }
 
-        if (message.message == WM_QUIT)
-        {
-            quit = true;
+            switch (message.message)
+            {
+            case WM_QUIT: {
+                quit = true;
+            }
+
+            case WM_KEYDOWN:
+            case WM_KEYUP: {
+            }
+            break;
+            }
         }
 
         // Get keyboard input.
@@ -492,19 +506,6 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
             b32 key_down = keyboard_state[VK_DOWN] & 0x80;
             b32 key_left = keyboard_state[VK_LEFT] & 0x80;
             b32 key_right = keyboard_state[VK_RIGHT] & 0x80;
-
-            if (key_up)
-            {
-                sound_output.frequency++;
-                sound_output.period_in_samples =
-                    sound_output.samples_per_second / sound_output.frequency;
-            }
-            else if (key_down)
-            {
-                sound_output.frequency--;
-                sound_output.period_in_samples =
-                    sound_output.samples_per_second / sound_output.frequency;
-            }
         }
 
         // Get controller input (via xinput).
@@ -586,11 +587,14 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
 
         game_sound_buffer_t game_sound_buffer = {0};
         game_sound_buffer.buffer = game_sound_buffer_memory;
-        game_sound_buffer.period_in_samples = sound_output.period_in_samples;
         game_sound_buffer.samples_to_output =
             bytes_to_write / sound_output.bytes_per_sample;
+        game_sound_buffer.samples_per_second = sound_output.samples_per_second;
 
-        game_update_and_render(&game_offscreen_buffer, &game_sound_buffer);
+        game_input_t game_input = {0};
+
+        game_update_and_render(&game_offscreen_buffer, &game_sound_buffer,
+                               &game_input);
 
         if (should_sound_play)
 
