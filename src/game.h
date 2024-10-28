@@ -1,47 +1,7 @@
 #ifndef __GAME_H__
 #define __GAME_H__
 
-#include <math.h>
-#include <stdint.h>
-#include <stdio.h>
-
-// NOTE: Move this over to a common header file.
-
-#ifdef PRISM_DEBUG
-#define ASSERT(x)                                                              \
-    if (!x)                                                                    \
-    {                                                                          \
-        __debugbreak();                                                        \
-    }
-#else
-#define ASSERT(x)
-#endif
-
-// Typedefs to primitive datatypes.
-typedef int8_t i8;
-typedef int16_t i16;
-typedef int32_t i32;
-typedef int64_t i64;
-
-typedef uint8_t u8;
-typedef uint16_t u16;
-typedef uint32_t u32;
-typedef uint64_t u64;
-
-typedef int32_t b32;
-
-typedef float f32;
-typedef double f64;
-
-#define true 1
-#define false 0
-
-#define pi32 3.14159265f
-
-// #defines to make usage of 'static' based on purpose more clear.
-#define internal static
-#define global_variable static
-#define local_persist static
+#include "common.h"
 
 typedef struct
 {
@@ -53,9 +13,10 @@ typedef struct
 
 typedef struct
 {
-    // buffer is a in-out parameter.
+    // buffer is an in-out parameter.
     i16 *buffer;
     u32 period_in_samples;
+    u32 samples_to_output;
 } game_sound_buffer_t;
 
 #endif

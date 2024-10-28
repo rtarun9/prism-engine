@@ -4,20 +4,19 @@
 // The platform layer takes care of intricacies like circular audio buffers
 // (like for direct sound).
 internal void game_output_sound_buffer(
-    game_sound_buffer_t *const restrict sound_buffer,
-    const u32 samples_to_output)
+    game_sound_buffer_t *const restrict sound_buffer)
 {
     ASSERT(sound_buffer);
 
-    local_persist u32 running_sample_index = 0;
+    local_persist f32 t_sine = 0;
     const u32 max_volume = 2000;
 
     i16 *sample_region = (i16 *)sound_buffer->buffer;
 
-    for (u32 sample_count = 0; sample_count < samples_to_output; sample_count++)
+    for (u32 sample_count = 0; sample_count < sound_buffer->samples_to_output;
+         sample_count++)
     {
-        f32 t_sine = (2.0f * pi32 * running_sample_index++) /
-                     (f32)sound_buffer->period_in_samples;
+        t_sine += (2.0f * pi32 * 1.0f) / (f32)sound_buffer->period_in_samples;
 
         i16 sample_value = (i16)(sinf(t_sine) * max_volume);
 
@@ -62,12 +61,11 @@ internal void game_render_gradient_to_framebuffer(
 
 internal void game_update_and_render(
     game_offscreen_buffer_t *const restrict game_offscreen_buffer,
-    game_sound_buffer_t *const restrict game_sound_buffer,
-    const u32 samples_to_output)
+    game_sound_buffer_t *const restrict game_sound_buffer)
 {
     ASSERT(game_offscreen_buffer);
     ASSERT(game_sound_buffer);
 
-    game_output_sound_buffer(game_sound_buffer, samples_to_output);
+    game_output_sound_buffer(game_sound_buffer);
     game_render_gradient_to_framebuffer(game_offscreen_buffer);
 }
