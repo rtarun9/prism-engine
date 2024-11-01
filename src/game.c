@@ -79,6 +79,16 @@ internal void game_update_and_render(
         x_shift--;
     }
 
+    if (game_input->keyboard_state.key_a.is_key_down)
+    {
+        y_shift++;
+    }
+
+    if (game_input->keyboard_state.key_d.is_key_down)
+    {
+        y_shift--;
+    }
+
     game_output_sound_buffer(game_sound_buffer);
     game_render_gradient_to_framebuffer(game_offscreen_buffer, x_shift,
                                         y_shift);

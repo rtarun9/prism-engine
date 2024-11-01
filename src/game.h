@@ -28,7 +28,9 @@ typedef struct
 typedef struct
 {
     game_key_state_t key_w;
+    game_key_state_t key_a;
     game_key_state_t key_s;
+    game_key_state_t key_d;
 } game_keyboard_state_t;
 
 typedef struct

@@ -331,6 +331,17 @@ internal void win32_fill_sound_buffer(win32_sound_output_t *sound_output,
     }
 }
 
+internal void win32_handle_key_input(game_key_state_t *const restrict input,
+                                     b32 is_key_down)
+{
+    if (input->is_key_down != is_key_down)
+    {
+        input->state_transition_count++;
+    }
+
+    input->is_key_down = is_key_down;
+}
+
 internal LRESULT CALLBACK win32_window_proc(HWND window, UINT message,
                                             WPARAM w_param, LPARAM l_param)
 {
@@ -338,7 +349,6 @@ internal LRESULT CALLBACK win32_window_proc(HWND window, UINT message,
 
     switch (message)
     {
-
     case WM_KEYDOWN:
     case WM_KEYUP:
     case WM_SYSKEYDOWN:
@@ -468,13 +478,13 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
 
     while (!quit)
     {
-        BYTE keyboard_state[256] = {0};
         MSG message = {0};
+
+        ZeroMemory((void *)current_game_input_ptr, sizeof(game_input_t));
 
         while (PeekMessageW(&message, 0, 0, 0, PM_REMOVE))
         {
             TranslateMessage(&message);
-            DispatchMessageW(&message);
 
             switch (message.message)
             {
@@ -482,30 +492,55 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
                 quit = true;
             }
 
-            case WM_KEYDOWN:
-            case WM_KEYUP: {
+            case WM_KEYUP:
+            case WM_SYSKEYDOWN:
+            case WM_SYSKEYUP:
+            case WM_KEYDOWN: {
+                b32 is_key_down = ~((message.lParam >> 30) & 0x1);
+
+                switch (message.wParam)
+                {
+                case VK_ESCAPE: {
+                    quit = true;
+                }
+                break;
+
+                case 'W': {
+                    win32_handle_key_input(
+                        &current_game_input_ptr->keyboard_state.key_w,
+                        is_key_down);
+                }
+                break;
+
+                case 'S': {
+                    win32_handle_key_input(
+                        &current_game_input_ptr->keyboard_state.key_s,
+                        is_key_down);
+                }
+                break;
+
+                case 'A': {
+                    win32_handle_key_input(
+                        &current_game_input_ptr->keyboard_state.key_a,
+                        is_key_down);
+                }
+                break;
+
+                case 'D': {
+                    win32_handle_key_input(
+                        &current_game_input_ptr->keyboard_state.key_d,
+                        is_key_down);
+                }
+                break;
+                }
+            }
+            break;
+
+            default: {
+                DispatchMessageW(&message);
             }
             break;
             }
-        }
-
-        // Get keyboard input.
-        if (GetKeyboardState(&keyboard_state[0]))
-        {
-            if (keyboard_state[VK_ESCAPE] & 0x80)
-            {
-                quit = true;
-            }
-
-            b32 key_w = keyboard_state['W'] & 0x80;
-            b32 key_a = keyboard_state['A'] & 0x80;
-            b32 key_s = keyboard_state['S'] & 0x80;
-            b32 key_d = keyboard_state['D'] & 0x80;
-
-            b32 key_up = keyboard_state[VK_UP] & 0x80;
-            b32 key_down = keyboard_state[VK_DOWN] & 0x80;
-            b32 key_left = keyboard_state[VK_LEFT] & 0x80;
-            b32 key_right = keyboard_state[VK_RIGHT] & 0x80;
         }
 
         // Get controller input (via xinput).
@@ -592,6 +627,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
         game_sound_buffer.samples_per_second = sound_output.samples_per_second;
 
         game_input_t game_input = {0};
+        game_input.keyboard_state = current_game_input_ptr->keyboard_state;
+
+        game_input_t *temp = current_game_input_ptr;
+        current_game_input_ptr = prev_game_input_ptr;
+        prev_game_input_ptr = temp;
 
         game_update_and_render(&game_offscreen_buffer, &game_sound_buffer,
                                &game_input);
@@ -618,8 +658,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
         u64 end_timestamp_value = __rdtsc();
         i32 clock_cycles_per_frame = end_timestamp_value - last_timestamp_value;
 
-        // 1 frames time -> milli_seconds_for_frame = 1 / seconds in dimension.
-        // To find the frames per second, we do -> 1 / time for single frame.
+        // 1 frames time -> milli_seconds_for_frame = 1 / seconds in
+        // dimension. To find the frames per second, we do -> 1 / time for
+        // single frame.
         i32 fps = 1000 / milli_seconds_for_frame;
 
         char text[256];
