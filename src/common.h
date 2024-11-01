@@ -41,4 +41,9 @@ typedef double f64;
 #define global_variable static
 #define local_persist static
 
+// Size related #defines.
+#define KILOBYTE(x) (x * 1024LL)
+#define MEGABYTE(x) (KILOBYTE(x) * 1024LL)
+#define GIGABYTE(x) (MEGABYTE(x) * 1024LL)
+
 #endif

@@ -5,24 +5,24 @@
 // The platform layer takes care of intricacies like circular audio buffers
 // (like for direct sound).
 internal void game_output_sound_buffer(
-    game_sound_buffer_t *const restrict sound_buffer)
+    game_sound_buffer_t *const restrict sound_buffer,
+    game_state_t *const restrict game_state)
 {
     ASSERT(sound_buffer);
 
-    local_persist f32 t_sine = 0;
     const u32 max_volume = 2000;
 
-    const u32 frequency = 256;
-    const u32 period_in_samples = sound_buffer->samples_per_second / frequency;
+    const u32 period_in_samples =
+        sound_buffer->samples_per_second / game_state->frequency;
 
     i16 *sample_region = (i16 *)sound_buffer->buffer;
 
     for (u32 sample_count = 0; sample_count < sound_buffer->samples_to_output;
          sample_count++)
     {
-        t_sine += (2.0f * pi32 * 1.0f) / period_in_samples;
+        game_state->t_sine += (2.0f * pi32 * 1.0f) / period_in_samples;
 
-        i16 sample_value = (i16)(sinf(t_sine) * max_volume);
+        i16 sample_value = (i16)(sinf(game_state->t_sine) * max_volume);
 
         *sample_region++ = sample_value;
         ASSERT(sample_region);
@@ -61,35 +61,49 @@ internal void game_render_gradient_to_framebuffer(
 internal void game_update_and_render(
     game_offscreen_buffer_t *const restrict game_offscreen_buffer,
     game_sound_buffer_t *const restrict game_sound_buffer,
-    game_input_t *const restrict game_input)
+    game_input_t *const restrict game_input,
+    game_memory_t *const restrict game_memory)
 {
     ASSERT(game_offscreen_buffer);
     ASSERT(game_sound_buffer);
+    ASSERT(game_input);
+    ASSERT(game_memory);
 
-    local_persist i32 x_shift = 0;
-    local_persist i32 y_shift = 0;
+    game_state_t *game_state =
+        (game_state_t *)game_memory->permanent_memory_block;
+
+    if (!game_state->is_initialized)
+    {
+        game_state->frequency = 256;
+
+        game_state->is_initialized = true;
+    }
 
     if (game_input->keyboard_state.key_w.is_key_down)
     {
-        x_shift++;
+        game_state->x_shift++;
+        game_state->frequency++;
     }
 
     if (game_input->keyboard_state.key_s.is_key_down)
     {
-        x_shift--;
+        game_state->x_shift--;
+        game_state->frequency--;
     }
 
     if (game_input->keyboard_state.key_a.is_key_down)
     {
-        y_shift++;
+        game_state->y_shift++;
+        game_state->frequency--;
     }
 
     if (game_input->keyboard_state.key_d.is_key_down)
     {
-        y_shift--;
+        game_state->y_shift--;
+        game_state->frequency++;
     }
 
-    game_output_sound_buffer(game_sound_buffer);
-    game_render_gradient_to_framebuffer(game_offscreen_buffer, x_shift,
-                                        y_shift);
+    game_output_sound_buffer(game_sound_buffer, game_state);
+    game_render_gradient_to_framebuffer(
+        game_offscreen_buffer, game_state->x_shift, game_state->y_shift);
 }

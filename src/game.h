@@ -38,4 +38,21 @@ typedef struct
     game_keyboard_state_t keyboard_state;
 } game_input_t;
 
+typedef struct
+{
+    i32 x_shift;
+    i32 y_shift;
+
+    f32 t_sine;
+    u32 frequency;
+
+    b32 is_initialized;
+} game_state_t;
+
+typedef struct
+{
+    u8 *permanent_memory_block;
+    u64 permanent_memory_block_size;
+} game_memory_t;
+
 #endif

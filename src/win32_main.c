@@ -476,6 +476,13 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
     game_input_t *prev_game_input_ptr = &prev_game_input;
     game_input_t *current_game_input_ptr = &current_game_input;
 
+    game_memory_t game_memory = {0};
+    game_memory.permanent_memory_block_size = KILOBYTE(4);
+    game_memory.permanent_memory_block =
+        VirtualAlloc(0, game_memory.permanent_memory_block_size,
+                     MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    ASSERT(game_memory.permanent_memory_block);
+
     while (!quit)
     {
         MSG message = {0};
@@ -634,7 +641,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
         prev_game_input_ptr = temp;
 
         game_update_and_render(&game_offscreen_buffer, &game_sound_buffer,
-                               &game_input);
+                               &game_input, &game_memory);
 
         if (should_sound_play)
 
