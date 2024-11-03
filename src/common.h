@@ -9,7 +9,8 @@
 #define ASSERT(x)                                                              \
     if (!x)                                                                    \
     {                                                                          \
-        __debugbreak();                                                        \
+        int *ptr = NULL;                                                       \
+        *ptr = 0;                                                              \
     }
 #else
 #define ASSERT(x)

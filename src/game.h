@@ -36,6 +36,7 @@ typedef struct
 typedef struct
 {
     game_keyboard_state_t keyboard_state;
+    f32 delta_time;
 } game_input_t;
 
 typedef struct
@@ -54,5 +55,10 @@ typedef struct
     u8 *permanent_memory_block;
     u64 permanent_memory_block_size;
 } game_memory_t;
+
+// Interfaces provided by the platform to the game.
+
+internal u8 *platform_read_file(const char *file_name);
+internal void platform_close_file(u8 *file_buffer);
 
 #endif

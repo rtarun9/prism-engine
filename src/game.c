@@ -76,6 +76,10 @@ internal void game_update_and_render(
     {
         game_state->frequency = 256;
 
+        u8 *file_buffer = platform_read_file("../src/game.c");
+        ASSERT(file_buffer);
+        platform_close_file(file_buffer);
+
         game_state->is_initialized = true;
     }
 

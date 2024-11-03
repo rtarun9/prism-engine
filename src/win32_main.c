@@ -399,6 +399,47 @@ internal LRESULT CALLBACK win32_window_proc(HWND window, UINT message,
     return result;
 }
 
+internal u8 *platform_read_file(const char *file_name)
+{
+    ASSERT(file_name);
+
+    // First, open the file for reading.
+    HANDLE file_handle = CreateFileA(file_name, GENERIC_READ, FILE_SHARE_READ,
+                                     NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL);
+
+    if (file_handle != INVALID_HANDLE_VALUE)
+    {
+        // Get the file size.
+        LARGE_INTEGER file_size = {0};
+        if (GetFileSizeEx(file_handle, &file_size))
+        {
+            // Allocate memory for the buffer that will contain the file
+            // contents.
+            u8 *file_buffer =
+                (u8 *)VirtualAlloc(0, file_size.QuadPart,
+                                   MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+            ASSERT(file_buffer);
+
+            // Read from file finally.
+            DWORD number_of_bytes_read = 0;
+            if (ReadFile(file_handle, (void *)file_buffer, file_size.QuadPart,
+                         &number_of_bytes_read, NULL))
+            {
+                ASSERT(number_of_bytes_read == file_size.QuadPart);
+
+                return file_buffer;
+            }
+        }
+    }
+
+    return NULL;
+}
+
+internal void platform_close_file(u8 *file_buffer)
+{
+    VirtualFree(file_buffer, 0, MEM_RELEASE);
+}
+
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
                     PWSTR command_line, int command_show)
 {
@@ -482,6 +523,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
         VirtualAlloc(0, game_memory.permanent_memory_block_size,
                      MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     ASSERT(game_memory.permanent_memory_block);
+
+    f32 delta_time = 0.0f;
 
     while (!quit)
     {
@@ -635,6 +678,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
 
         game_input_t game_input = {0};
         game_input.keyboard_state = current_game_input_ptr->keyboard_state;
+        game_input.delta_time = delta_time;
 
         game_input_t *temp = current_game_input_ptr;
         current_game_input_ptr = prev_game_input_ptr;
@@ -659,7 +703,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
 
         i32 counts_for_frame =
             (end_counter_value.QuadPart - last_counter_value.QuadPart);
-        f32 milli_seconds_for_frame =
+        delta_time =
             (1000.0f * counts_for_frame) / (f32)perf_frequency.QuadPart;
 
         u64 end_timestamp_value = __rdtsc();
@@ -668,11 +712,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
         // 1 frames time -> milli_seconds_for_frame = 1 / seconds in
         // dimension. To find the frames per second, we do -> 1 / time for
         // single frame.
-        i32 fps = 1000 / milli_seconds_for_frame;
+        i32 fps = 1000 / delta_time;
 
         char text[256];
         sprintf(text, "MS for frame : %f ms, FPS : %d, Clocks per frame : %d\n",
-                milli_seconds_for_frame, fps, clock_cycles_per_frame);
+                delta_time, fps, clock_cycles_per_frame);
         OutputDebugStringA(text);
 
         last_counter_value = end_counter_value;
