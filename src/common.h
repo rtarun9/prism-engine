@@ -7,7 +7,7 @@
 
 #ifdef PRISM_DEBUG
 #define ASSERT(x)                                                              \
-    if (!x)                                                                    \
+    if (!(x))                                                                  \
     {                                                                          \
         int *ptr = NULL;                                                       \
         *ptr = 0;                                                              \
@@ -46,5 +46,29 @@ typedef double f64;
 #define KILOBYTE(x) (x * 1024LL)
 #define MEGABYTE(x) (KILOBYTE(x) * 1024LL)
 #define GIGABYTE(x) (MEGABYTE(x) * 1024LL)
+
+internal u32 truncate_u64_to_u32(const u64 value)
+{
+    ASSERT(value <= 0xffffffff);
+
+    u32 result = (u32)value;
+    return result;
+}
+
+internal i32 truncate_i64_to_i32(const i64 value)
+{
+    ASSERT(value <= 0xffffffff);
+
+    i32 result = (i32)value;
+    return result;
+}
+
+internal i32 truncate_f32_to_i32(const f32 value)
+{
+    ASSERT(value <= 0xffffffff);
+
+    i32 result = (i32)value;
+    return result;
+}
 
 #endif

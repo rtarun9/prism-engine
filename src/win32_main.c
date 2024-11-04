@@ -422,10 +422,15 @@ internal u8 *platform_read_file(const char *file_name)
 
             // Read from file finally.
             DWORD number_of_bytes_read = 0;
-            if (ReadFile(file_handle, (void *)file_buffer, file_size.QuadPart,
+            if (ReadFile(file_handle, (void *)file_buffer,
+                         truncate_u64_to_u32(file_size.QuadPart),
                          &number_of_bytes_read, NULL))
             {
                 ASSERT(number_of_bytes_read == file_size.QuadPart);
+            }
+            else
+            {
+                VirtualFree(file_buffer, 0, MEM_RELEASE);
             }
         }
         CloseHandle(file_handle);
@@ -453,7 +458,7 @@ internal b32 platform_write_to_file(const char *string, const char *file_name)
     if (file_handle != INVALID_HANDLE_VALUE)
     {
         // TODO: Best way to get how many bytes we have to write.
-        u32 string_len = strlen(string);
+        u32 string_len = truncate_u64_to_u32(strlen(string));
 
         DWORD number_of_bytes_written = 0;
 
@@ -733,21 +738,22 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
         LARGE_INTEGER end_counter_value = {0};
         QueryPerformanceCounter(&end_counter_value);
 
-        i32 counts_for_frame =
-            (end_counter_value.QuadPart - last_counter_value.QuadPart);
+        i32 counts_for_frame = truncate_i64_to_i32(end_counter_value.QuadPart -
+                                                   last_counter_value.QuadPart);
         delta_time =
             (1000.0f * counts_for_frame) / (f32)perf_frequency.QuadPart;
 
         u64 end_timestamp_value = __rdtsc();
-        i32 clock_cycles_per_frame = end_timestamp_value - last_timestamp_value;
+        u64 clock_cycles_per_frame = end_timestamp_value - last_timestamp_value;
 
         // 1 frames time -> milli_seconds_for_frame = 1 / seconds in
         // dimension. To find the frames per second, we do -> 1 / time for
         // single frame.
-        i32 fps = 1000 / delta_time;
+        i32 fps = truncate_f32_to_i32(1000 / delta_time);
 
         char text[256];
-        sprintf(text, "MS for frame : %f ms, FPS : %d, Clocks per frame : %d\n",
+        sprintf(text,
+                "MS for frame : %f ms, FPS : %d, Clocks per frame :  %llu\n ",
                 delta_time, fps, clock_cycles_per_frame);
         OutputDebugStringA(text);
 
