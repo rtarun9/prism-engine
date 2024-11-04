@@ -8,7 +8,6 @@
 #include "game.h"
 
 #include <Windows.h>
-
 #include <dsound.h>
 #include <xinput.h>
 
@@ -403,10 +402,11 @@ internal u8 *platform_read_file(const char *file_name)
 {
     ASSERT(file_name);
 
-    // First, open the file for reading.
-    HANDLE file_handle = CreateFileA(file_name, GENERIC_READ, FILE_SHARE_READ,
-                                     NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL);
+    HANDLE file_handle =
+        CreateFileA(file_name, GENERIC_READ, 0, NULL, OPEN_EXISTING,
+                    FILE_ATTRIBUTE_NORMAL, NULL);
 
+    u8 *file_buffer = NULL;
     if (file_handle != INVALID_HANDLE_VALUE)
     {
         // Get the file size.
@@ -415,7 +415,7 @@ internal u8 *platform_read_file(const char *file_name)
         {
             // Allocate memory for the buffer that will contain the file
             // contents.
-            u8 *file_buffer =
+            file_buffer =
                 (u8 *)VirtualAlloc(0, file_size.QuadPart,
                                    MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
             ASSERT(file_buffer);
@@ -426,18 +426,50 @@ internal u8 *platform_read_file(const char *file_name)
                          &number_of_bytes_read, NULL))
             {
                 ASSERT(number_of_bytes_read == file_size.QuadPart);
-
-                return file_buffer;
             }
         }
+        CloseHandle(file_handle);
     }
 
-    return NULL;
+    return file_buffer;
 }
 
 internal void platform_close_file(u8 *file_buffer)
 {
     VirtualFree(file_buffer, 0, MEM_RELEASE);
+}
+
+internal b32 platform_write_to_file(const char *string, const char *file_name)
+{
+    ASSERT(file_name);
+    ASSERT(string);
+
+    b32 result = true;
+
+    HANDLE file_handle =
+        CreateFileA(file_name, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
+                    FILE_ATTRIBUTE_NORMAL, NULL);
+
+    if (file_handle != INVALID_HANDLE_VALUE)
+    {
+        // TODO: Best way to get how many bytes we have to write.
+        u32 string_len = strlen(string);
+
+        DWORD number_of_bytes_written = 0;
+
+        if (WriteFile(file_handle, (void *)string, string_len,
+                      &number_of_bytes_written, NULL))
+        {
+            ASSERT(number_of_bytes_written == string_len);
+        }
+        CloseHandle(file_handle);
+    }
+    else
+    {
+        result = false;
+    }
+
+    return result;
 }
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,

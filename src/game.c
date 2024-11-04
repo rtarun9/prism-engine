@@ -75,10 +75,16 @@ internal void game_update_and_render(
     if (!game_state->is_initialized)
     {
         game_state->frequency = 256;
-
         u8 *file_buffer = platform_read_file("../src/game.c");
         ASSERT(file_buffer);
+
         platform_close_file(file_buffer);
+
+        const char *string_to_write_to_file =
+            "Hi@!!!!, this is some text that is written to a file!";
+
+        ASSERT(platform_write_to_file(string_to_write_to_file, "output.txt") ==
+               true);
 
         game_state->is_initialized = true;
     }

@@ -60,5 +60,6 @@ typedef struct
 
 internal u8 *platform_read_file(const char *file_name);
 internal void platform_close_file(u8 *file_buffer);
+internal b32 platform_write_to_file(const char *string, const char *file_name);
 
 #endif
