@@ -47,6 +47,8 @@ typedef double f64;
 #define MEGABYTE(x) (KILOBYTE(x) * 1024LL)
 #define GIGABYTE(x) (MEGABYTE(x) * 1024LL)
 
+#define ARRAY_COUNT(x) (sizeof(x) / sizeof(x[0]))
+
 internal u32 truncate_u64_to_u32(const u64 value)
 {
     ASSERT(value <= 0xffffffff);

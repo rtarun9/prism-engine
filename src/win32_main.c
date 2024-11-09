@@ -477,7 +477,7 @@ internal b32 platform_write_to_file(const char *string, const char *file_name)
     return result;
 }
 
-u64 win32_get_perf_counter_frequency()
+internal u64 win32_get_perf_counter_frequency()
 {
     LARGE_INTEGER frequency = {0};
     QueryPerformanceFrequency(&frequency);
@@ -485,7 +485,7 @@ u64 win32_get_perf_counter_frequency()
     return (u64)frequency.QuadPart;
 }
 
-u64 win32_get_perf_counter_value()
+internal u64 win32_get_perf_counter_value()
 {
     LARGE_INTEGER counter_value = {0};
     QueryPerformanceCounter(&counter_value);
@@ -493,10 +493,54 @@ u64 win32_get_perf_counter_value()
     return (u64)counter_value.QuadPart;
 }
 
-f32 win32_get_time_delta_ms(u64 start, u64 end, u64 counts_per_second)
+internal f32 win32_get_time_delta_ms(u64 start, u64 end, u64 counts_per_second)
 {
     f32 result = 1000.0f * (f32)(end - start) / (f32)counts_per_second;
     return result;
+}
+
+internal void win32_draw_line(
+    u32 x_offset, u32 y_offset, u32 x_width, u32 y_width,
+    win32_offscreen_buffer_t *const restrict backbuffer, u32 color)
+{
+    u32 *row = backbuffer->framebuffer_memory + x_offset +
+               (y_offset + y_width) * backbuffer->width;
+    u32 stride = backbuffer->width;
+
+    for (u32 y = y_offset; y < y_offset + y_width; y++)
+    {
+        u32 *pixel = row;
+        for (u32 x = x_offset; x < x_offset + x_width; x++)
+        {
+            *pixel++ = color;
+        }
+
+        row += stride;
+    }
+}
+
+internal void win32_debug_play_cursor_position(
+    u32 *const restrict play_cursor_positions, u32 play_cursor_position_size,
+    win32_offscreen_buffer_t *const restrict backbuffer,
+    win32_sound_output_t *const restrict sound_output, u32 color)
+{
+    ASSERT(backbuffer);
+    ASSERT(sound_output);
+    ASSERT(play_cursor_positions);
+
+    // The backbuffer and play cursor position size are not the same, so the
+    // 'offset' and 'padding' has to be computed.
+    u32 x_pad = 16;
+    u32 y_pad = 16;
+
+    f32 c = play_cursor_position_size / (f32)(backbuffer->width - 2 * x_pad);
+
+    for (u32 i = 0; i < play_cursor_position_size; i++)
+    {
+        u32 x_offset = (u32)(c * play_cursor_positions[i]);
+
+        win32_draw_line(x_offset, y_pad, 1, 256, backbuffer, color);
+    }
 }
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
@@ -542,7 +586,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
         sound_output.samples_per_second * sound_output.bytes_per_sample;
     sound_output.running_sample_index = 0;
     sound_output.samples_to_write_per_frame =
-        sound_output.samples_per_second / 20;
+        sound_output.samples_per_second / 60;
 
     win32_init_dsound(window, sound_output.secondary_buffer_size,
                       sound_output.samples_per_second);
@@ -578,10 +622,10 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
 
     f32 delta_time = 0.0f;
 
-    // Code to limit framerate.
-    const u32 monitor_refresh_rate = 60;
-    const u32 game_update_hz = monitor_refresh_rate;
-    const u32 target_ms_per_frame = (u32)(1000.0f / (f32)game_update_hz);
+// Code to limit framerate.
+#define monitor_refresh_rate 60
+#define game_update_hz monitor_refresh_rate
+#define target_ms_per_frame (u32)(1000.0f / (f32)game_update_hz)
 
     // Get the current value of performance counter.
     // This can be used to find number of 'counts' per frame. Then, by dividing
@@ -590,6 +634,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
     u64 last_counter_value = win32_get_perf_counter_value();
 
     u64 last_timestamp_value = __rdtsc();
+
+    u32 play_cursor_positions[game_update_hz] = {0};
+    u32 play_cursor_position_index = 0;
+
+    u32 frame_index = 0;
 
     while (!quit)
     {
@@ -773,6 +822,27 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
             // video).
         }
 
+        // TODO: remove this, as it is only present for the linter to detect
+        // that PRISM_DEBUG is #defined currently.
+#define PRISM_DEBUG 1
+#ifdef PRISM_DEBUG
+        // Debug the play cursor position to the backbuffer for debugging
+        // purposes.
+        play_cursor_positions[play_cursor_position_index++] =
+            current_play_cursor;
+
+        if (play_cursor_position_index >= ARRAY_COUNT(play_cursor_positions))
+        {
+
+            play_cursor_position_index = 0;
+            play_cursor_position_index = 0;
+        }
+
+        win32_debug_play_cursor_position(
+            play_cursor_positions, ARRAY_COUNT(play_cursor_positions),
+            &g_backbuffer, &sound_output, frame_index);
+#endif
+
         win32_render_buffer_to_window(&g_backbuffer, device_context,
                                       window_dimensions.width,
                                       window_dimensions.height);
@@ -800,6 +870,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
 
         last_counter_value = end_counter_value;
         last_timestamp_value = end_timestamp_value;
+
+        frame_index++;
     }
 
     return 0;
