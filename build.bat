@@ -24,7 +24,7 @@ REM Below are explanations for the various warnings that are ignored.
 :: C4996 : sprintf deprecation (NOTE: sprintf should not be used in future).
 :: C4189 : Local variable initialized but not referenced.
 
-cl.exe /nologo /DPRISM_DEBUG /Oi /Od /Zi /FC /W4 /WX /wd4100 /wd4127 /wd4996 /wd4189 /MT /fp:precise ../src/win32_main.c /Fe:game.exe user32.lib gdi32.lib
+cl.exe /nologo /DPRISM_DEBUG /Oi /Od /Zi /FC /W4 /WX /wd4100 /wd4127 /wd4996 /wd4189 /MT /fp:precise ../src/win32_main.c /Fe:game.exe user32.lib gdi32.lib Winmm.lib
 game.exe
 popd
 

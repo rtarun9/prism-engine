@@ -477,9 +477,34 @@ internal b32 platform_write_to_file(const char *string, const char *file_name)
     return result;
 }
 
+u64 win32_get_perf_counter_frequency()
+{
+    LARGE_INTEGER frequency = {0};
+    QueryPerformanceFrequency(&frequency);
+
+    return (u64)frequency.QuadPart;
+}
+
+u64 win32_get_perf_counter_value()
+{
+    LARGE_INTEGER counter_value = {0};
+    QueryPerformanceCounter(&counter_value);
+
+    return (u64)counter_value.QuadPart;
+}
+
+f32 win32_get_time_delta_ms(u64 start, u64 end, u64 counts_per_second)
+{
+    f32 result = 1000.0f * (f32)(end - start) / (f32)counts_per_second;
+    return result;
+}
+
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
                     PWSTR command_line, int command_show)
 {
+    // Set thread scheduler granularity to 1ms.
+    timeBeginPeriod(1u);
+
     win32_load_xinput_functions();
 
     // Register a window class : set of behaviors that several windows might
@@ -536,17 +561,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
     b32 quit = false;
 
     // Get the number of counts that occur in a second.
-    LARGE_INTEGER perf_frequency = {0};
-    QueryPerformanceFrequency(&perf_frequency);
-
-    // Get the current value of performance counter.
-    // This can be used to find number of 'counts' per frame. Then, by dividing
-    // with perf_frequency, we can find how long it took (in seconds) to render
-    // this frame.
-    LARGE_INTEGER last_counter_value = {0};
-    QueryPerformanceCounter(&last_counter_value);
-
-    u64 last_timestamp_value = __rdtsc();
+    u64 perf_counter_frequency = win32_get_perf_counter_frequency();
 
     game_input_t prev_game_input = {0};
     game_input_t current_game_input = {0};
@@ -563,6 +578,19 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
 
     f32 delta_time = 0.0f;
 
+    // Code to limit framerate.
+    const u32 monitor_refresh_rate = 60;
+    const u32 game_update_hz = monitor_refresh_rate;
+    const u32 target_ms_per_frame = (u32)(1000.0f / (f32)game_update_hz);
+
+    // Get the current value of performance counter.
+    // This can be used to find number of 'counts' per frame. Then, by dividing
+    // with perf_counter_frequency, we can find how long it took (in seconds) to
+    // render this frame.
+    u64 last_counter_value = win32_get_perf_counter_value();
+
+    u64 last_timestamp_value = __rdtsc();
+
     while (!quit)
     {
         MSG message = {0};
@@ -571,7 +599,6 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
 
         while (PeekMessageW(&message, 0, 0, 0, PM_REMOVE))
         {
-            TranslateMessage(&message);
 
             switch (message.message)
             {
@@ -624,6 +651,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
             break;
 
             default: {
+                TranslateMessage(&message);
                 DispatchMessageW(&message);
             }
             break;
@@ -730,18 +758,31 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
             win32_fill_sound_buffer(&sound_output, current_play_cursor,
                                     bytes_to_write, game_sound_buffer_memory);
         }
+        u64 end_counter_value = win32_get_perf_counter_value();
+
+        f32 ms_for_frame = win32_get_time_delta_ms(
+            last_counter_value, end_counter_value, perf_counter_frequency);
+
+        if (ms_for_frame <= target_ms_per_frame)
+        {
+            Sleep((DWORD)(target_ms_per_frame - ms_for_frame));
+        }
+        else
+        {
+            // Missed the time within which frame has to be prepared (audio +
+            // video).
+        }
 
         win32_render_buffer_to_window(&g_backbuffer, device_context,
                                       window_dimensions.width,
                                       window_dimensions.height);
 
-        LARGE_INTEGER end_counter_value = {0};
-        QueryPerformanceCounter(&end_counter_value);
+        end_counter_value = win32_get_perf_counter_value();
 
-        i32 counts_for_frame = truncate_i64_to_i32(end_counter_value.QuadPart -
-                                                   last_counter_value.QuadPart);
-        delta_time =
-            (1000.0f * counts_for_frame) / (f32)perf_frequency.QuadPart;
+        ms_for_frame = win32_get_time_delta_ms(
+            last_counter_value, end_counter_value, perf_counter_frequency);
+
+        delta_time = ms_for_frame;
 
         u64 end_timestamp_value = __rdtsc();
         u64 clock_cycles_per_frame = end_timestamp_value - last_timestamp_value;
@@ -754,7 +795,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
         char text[256];
         sprintf(text,
                 "MS for frame : %f ms, FPS : %d, Clocks per frame :  %llu\n ",
-                delta_time, fps, clock_cycles_per_frame);
+                ms_for_frame, fps, clock_cycles_per_frame);
         OutputDebugStringA(text);
 
         last_counter_value = end_counter_value;

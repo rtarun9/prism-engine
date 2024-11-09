@@ -91,7 +91,7 @@ internal void game_update_and_render(
 
     if (game_input->keyboard_state.key_w.is_key_down)
     {
-        game_state->x_shift++;
+        game_state->x_shift += 4;
         game_state->frequency++;
     }
 
