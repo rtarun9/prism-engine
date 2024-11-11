@@ -503,14 +503,15 @@ internal void win32_draw_line(
     u32 x_offset, u32 y_offset, u32 x_width, u32 y_width,
     win32_offscreen_buffer_t *const restrict backbuffer, u32 color)
 {
-    u32 *row = backbuffer->framebuffer_memory + x_offset +
-               (y_offset + y_width) * backbuffer->width;
-    u32 stride = backbuffer->width;
+    u8 *row = ((u8 *)backbuffer->framebuffer_memory + x_offset * 4 +
+               y_offset * backbuffer->width * 4);
 
-    for (u32 y = y_offset; y < y_offset + y_width; y++)
+    const u32 stride = backbuffer->width * 4;
+
+    for (u32 y = 0; y < y_width; y++)
     {
-        u32 *pixel = row;
-        for (u32 x = x_offset; x < x_offset + x_width; x++)
+        u32 *pixel = (u32 *)row;
+        for (u32 x = 0; x < x_width; x++)
         {
             *pixel++ = color;
         }
@@ -522,7 +523,7 @@ internal void win32_draw_line(
 internal void win32_debug_play_cursor_position(
     u32 *const restrict play_cursor_positions, u32 play_cursor_position_size,
     win32_offscreen_buffer_t *const restrict backbuffer,
-    win32_sound_output_t *const restrict sound_output, u32 color)
+    win32_sound_output_t *const restrict sound_output)
 {
     ASSERT(backbuffer);
     ASSERT(sound_output);
@@ -533,13 +534,15 @@ internal void win32_debug_play_cursor_position(
     u32 x_pad = 16;
     u32 y_pad = 16;
 
-    f32 c = play_cursor_position_size / (f32)(backbuffer->width - 2 * x_pad);
+    f32 c = (f32)(backbuffer->width - 2 * x_pad) /
+            sound_output->secondary_buffer_size;
 
     for (u32 i = 0; i < play_cursor_position_size; i++)
     {
         u32 x_offset = (u32)(c * play_cursor_positions[i]);
 
-        win32_draw_line(x_offset, y_pad, 1, 256, backbuffer, color);
+        win32_draw_line(x_offset, y_pad, 1, backbuffer->height - y_pad,
+                        backbuffer, 0xFFFFFFFF);
     }
 }
 
@@ -586,7 +589,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
         sound_output.samples_per_second * sound_output.bytes_per_sample;
     sound_output.running_sample_index = 0;
     sound_output.samples_to_write_per_frame =
-        sound_output.samples_per_second / 60;
+        sound_output.samples_per_second / 10;
 
     win32_init_dsound(window, sound_output.secondary_buffer_size,
                       sound_output.samples_per_second);
@@ -622,20 +625,30 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
 
     f32 delta_time = 0.0f;
 
-// Code to limit framerate.
-#define monitor_refresh_rate 60
-#define game_update_hz monitor_refresh_rate
-#define target_ms_per_frame (u32)(1000.0f / (f32)game_update_hz)
+    // Code to limit framerate.
+    const u32 monitor_refresh_rate = 60;
+    const u32 game_update_hz = monitor_refresh_rate;
+    const u32 target_ms_per_frame = (u32)(1000.0f / (f32)game_update_hz);
 
     // Get the current value of performance counter.
-    // This can be used to find number of 'counts' per frame. Then, by dividing
-    // with perf_counter_frequency, we can find how long it took (in seconds) to
-    // render this frame.
+    // This can be used to find number of 'counts' per frame. Then, by
+    // dividing with perf_counter_frequency, we can find how long it took
+    // (in seconds) to render this frame.
     u64 last_counter_value = win32_get_perf_counter_value();
 
     u64 last_timestamp_value = __rdtsc();
 
-    u32 play_cursor_positions[game_update_hz] = {0};
+    u32 play_cursor_position_size = game_update_hz;
+
+    u32 *play_cursor_positions =
+        (u32 *)_alloca(sizeof(u32) * play_cursor_position_size);
+    ASSERT(play_cursor_positions);
+
+    for (u32 i = 0; i < play_cursor_position_size; i++)
+    {
+        play_cursor_positions[i] = 0;
+    }
+
     u32 play_cursor_position_index = 0;
 
     u32 frame_index = 0;
@@ -648,7 +661,6 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
 
         while (PeekMessageW(&message, 0, 0, 0, PM_REMOVE))
         {
-
             switch (message.message)
             {
             case WM_QUIT: {
@@ -807,6 +819,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
             win32_fill_sound_buffer(&sound_output, current_play_cursor,
                                     bytes_to_write, game_sound_buffer_memory);
         }
+
         u64 end_counter_value = win32_get_perf_counter_value();
 
         f32 ms_for_frame = win32_get_time_delta_ms(
@@ -821,32 +834,6 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
             // Missed the time within which frame has to be prepared (audio +
             // video).
         }
-
-        // TODO: remove this, as it is only present for the linter to detect
-        // that PRISM_DEBUG is #defined currently.
-#define PRISM_DEBUG 1
-#ifdef PRISM_DEBUG
-        // Debug the play cursor position to the backbuffer for debugging
-        // purposes.
-        play_cursor_positions[play_cursor_position_index++] =
-            current_play_cursor;
-
-        if (play_cursor_position_index >= ARRAY_COUNT(play_cursor_positions))
-        {
-
-            play_cursor_position_index = 0;
-            play_cursor_position_index = 0;
-        }
-
-        win32_debug_play_cursor_position(
-            play_cursor_positions, ARRAY_COUNT(play_cursor_positions),
-            &g_backbuffer, &sound_output, frame_index);
-#endif
-
-        win32_render_buffer_to_window(&g_backbuffer, device_context,
-                                      window_dimensions.width,
-                                      window_dimensions.height);
-
         end_counter_value = win32_get_perf_counter_value();
 
         ms_for_frame = win32_get_time_delta_ms(
@@ -854,6 +841,37 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
 
         delta_time = ms_for_frame;
 
+        // TODO: remove this, as it is only present for the linter to detect
+        // that PRISM_DEBUG is #defined currently.
+#define PRISM_DEBUG 1
+#ifdef PRISM_DEBUG
+        // Debug the play cursor position to the backbuffer for debugging
+        // purposes.
+        ASSERT(play_cursor_position_index < play_cursor_position_size);
+
+        play_cursor_positions[play_cursor_position_index++] =
+            current_play_cursor;
+
+        if (play_cursor_position_index >= play_cursor_position_size)
+        {
+            play_cursor_position_index = 0;
+        }
+
+        win32_debug_play_cursor_position(play_cursor_positions,
+                                         play_cursor_position_size,
+                                         &g_backbuffer, &sound_output);
+#endif
+
+        win32_render_buffer_to_window(&g_backbuffer, device_context,
+                                      window_dimensions.width,
+                                      window_dimensions.height);
+
+        frame_index++;
+
+        // NOTE: The value of perf counter is fetched right after Sleep is done.
+        // It does NOT account for rendering the buffer to window. Should check
+        // if RTDSC has to also be fetched after sleep (it isn't being used for
+        // now to control framerate).
         u64 end_timestamp_value = __rdtsc();
         u64 clock_cycles_per_frame = end_timestamp_value - last_timestamp_value;
 
@@ -870,8 +888,6 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
 
         last_counter_value = end_counter_value;
         last_timestamp_value = end_timestamp_value;
-
-        frame_index++;
     }
 
     return 0;
