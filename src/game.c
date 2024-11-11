@@ -46,12 +46,15 @@ internal void game_render_gradient_to_framebuffer(
         for (u32 x = 0; x < buffer->width; x++)
         {
             u8 red = ((x + x_shift) & 0xff);
-            u8 blue = ((y + y_shift) & 0xff);
-            u8 green = 0;
+            u8 blue = 0;
+            u8 green = ((y + y_shift) & 0xff);
             u8 alpha = 0xff;
 
             // Layout in memory is : XX RR GG BB.
-            *pixel++ = blue | (green << 8) | (red << 16) | (alpha << 24);
+            // NOTE: Without uncommenting the below line, game will not render
+            // anything to the back buffer.
+            //*pixel++ = blue | (green << 8) | (red << 16) | (alpha << 24);
+            *pixel++ = (alpha << 24);
         }
 
         row += pitch;

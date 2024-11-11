@@ -520,8 +520,9 @@ internal void win32_draw_line(
     }
 }
 
-internal void win32_debug_play_cursor_position(
-    u32 *const restrict play_cursor_positions, u32 play_cursor_position_size,
+internal void win32_debug_sound_cursors_position(
+    u32 *const restrict play_cursor_positions,
+    u32 *const restrict write_cursor_positions, u32 cursors_position_size,
     win32_offscreen_buffer_t *const restrict backbuffer,
     win32_sound_output_t *const restrict sound_output)
 {
@@ -537,12 +538,27 @@ internal void win32_debug_play_cursor_position(
     f32 c = (f32)(backbuffer->width - 2 * x_pad) /
             sound_output->secondary_buffer_size;
 
-    for (u32 i = 0; i < play_cursor_position_size; i++)
+    for (u32 i = 0; i < cursors_position_size; i++)
     {
-        u32 x_offset = (u32)(c * play_cursor_positions[i]);
+        // Layout in memory is : XX RR GG BB.
 
-        win32_draw_line(x_offset, y_pad, 1, backbuffer->height - y_pad,
-                        backbuffer, 0xFFFFFFFF);
+        f32 color_multiplier = 255.0f / (f32)cursors_position_size;
+
+        u8 alpha_value = truncate_f32_to_u8(color_multiplier * i);
+
+        {
+            u32 x_offset = truncate_f32_to_u32(c * play_cursor_positions[i]);
+
+            win32_draw_line(x_offset, y_pad, 1, backbuffer->height - y_pad,
+                            backbuffer, alpha_value | 0x00FF0000);
+        }
+
+        {
+            u32 x_offset = truncate_f32_to_u32(c * write_cursor_positions[i]);
+
+            win32_draw_line(x_offset, y_pad, 1, backbuffer->height - y_pad,
+                            backbuffer, alpha_value | 0x0000FF00);
+        }
     }
 }
 
@@ -589,7 +605,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
         sound_output.samples_per_second * sound_output.bytes_per_sample;
     sound_output.running_sample_index = 0;
     sound_output.samples_to_write_per_frame =
-        sound_output.samples_per_second / 10;
+        sound_output.samples_per_second / 15;
 
     win32_init_dsound(window, sound_output.secondary_buffer_size,
                       sound_output.samples_per_second);
@@ -627,7 +643,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
 
     // Code to limit framerate.
     const u32 monitor_refresh_rate = 60;
-    const u32 game_update_hz = monitor_refresh_rate;
+    const u32 game_update_hz = monitor_refresh_rate / 2;
     const u32 target_ms_per_frame = (u32)(1000.0f / (f32)game_update_hz);
 
     // Get the current value of performance counter.
@@ -638,18 +654,33 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
 
     u64 last_timestamp_value = __rdtsc();
 
-    u32 play_cursor_position_size = game_update_hz;
+    u32 sound_cursors_position_size = game_update_hz;
 
     u32 *play_cursor_positions =
-        (u32 *)_alloca(sizeof(u32) * play_cursor_position_size);
+        (u32 *)_alloca(sizeof(u32) * sound_cursors_position_size);
     ASSERT(play_cursor_positions);
 
-    for (u32 i = 0; i < play_cursor_position_size; i++)
+    u32 *write_cursor_positions =
+        (u32 *)_alloca(sizeof(u32) * sound_cursors_position_size);
+    ASSERT(write_cursor_positions);
+
+    for (u32 i = 0; i < sound_cursors_position_size; i++)
     {
         play_cursor_positions[i] = 0;
     }
 
-    u32 play_cursor_position_index = 0;
+    for (u32 i = 0; i < sound_cursors_position_size; i++)
+    {
+        write_cursor_positions[i] = 0;
+    }
+
+    u32 sound_cursors_position_index = 0;
+
+    // NOTE: These values are fetched during the page flip.
+    DWORD previous_play_cursor = 0;
+    DWORD previous_write_cursor = 0;
+
+    b32 should_sound_play = false;
 
     u32 frame_index = 0;
 
@@ -754,19 +785,13 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
 
         // Fill secondary buffer (for audio).
 
-        DWORD current_play_cursor = 0;
-        DWORD current_write_cursor = 0;
         DWORD bytes_to_write = 0;
         u32 write_lock_offset = 0;
 
-        b32 should_sound_play = false;
-
-        if (SUCCEEDED(IDirectSoundBuffer_GetCurrentPosition(
-                g_secondary_buffer, &current_play_cursor,
-                &current_write_cursor)))
+        if (should_sound_play)
         {
 
-            u32 target_lock_offset = (current_play_cursor +
+            u32 target_lock_offset = (previous_play_cursor +
                                       (sound_output.samples_to_write_per_frame *
                                        sound_output.bytes_per_sample)) %
                                      sound_output.secondary_buffer_size;
@@ -786,7 +811,6 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
                 bytes_to_write =
                     target_lock_offset - write_lock_offset; // for region 0.
             }
-            should_sound_play = true;
         }
 
         // Render and update the game.
@@ -816,7 +840,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
         if (should_sound_play)
 
         {
-            win32_fill_sound_buffer(&sound_output, current_play_cursor,
+            win32_fill_sound_buffer(&sound_output, previous_write_cursor,
                                     bytes_to_write, game_sound_buffer_memory);
         }
 
@@ -845,26 +869,34 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
         // that PRISM_DEBUG is #defined currently.
 #define PRISM_DEBUG 1
 #ifdef PRISM_DEBUG
-        // Debug the play cursor position to the backbuffer for debugging
-        // purposes.
-        ASSERT(play_cursor_position_index < play_cursor_position_size);
+        ASSERT(sound_cursors_position_index < sound_cursors_position_size);
 
-        play_cursor_positions[play_cursor_position_index++] =
-            current_play_cursor;
+        play_cursor_positions[sound_cursors_position_index++] =
+            previous_play_cursor;
 
-        if (play_cursor_position_index >= play_cursor_position_size)
+        write_cursor_positions[sound_cursors_position_index++] =
+            previous_write_cursor;
+
+        if (sound_cursors_position_index >= sound_cursors_position_size)
         {
-            play_cursor_position_index = 0;
+            sound_cursors_position_index = 0;
         }
 
-        win32_debug_play_cursor_position(play_cursor_positions,
-                                         play_cursor_position_size,
-                                         &g_backbuffer, &sound_output);
+        win32_debug_sound_cursors_position(
+            play_cursor_positions, write_cursor_positions,
+            sound_cursors_position_size, &g_backbuffer, &sound_output);
 #endif
 
         win32_render_buffer_to_window(&g_backbuffer, device_context,
                                       window_dimensions.width,
                                       window_dimensions.height);
+
+        if (SUCCEEDED(IDirectSoundBuffer_GetCurrentPosition(
+                g_secondary_buffer, &previous_play_cursor,
+                &previous_write_cursor)))
+        {
+            should_sound_play = true;
+        }
 
         frame_index++;
 
