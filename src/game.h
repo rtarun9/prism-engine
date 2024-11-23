@@ -49,9 +49,29 @@ typedef struct
 } game_memory_t;
 
 // Interfaces provided by the platform to the game.
+#define DEF_PLATFORM_READ_FILE_FUNC(name) u8 *name(const char *file_name)
+typedef DEF_PLATFORM_READ_FILE_FUNC(platform_read_file_t);
 
-internal u8 *platform_read_file(const char *file_name);
-internal void platform_close_file(u8 *file_buffer);
-internal b32 platform_write_to_file(const char *string, const char *file_name);
+#define DEF_PLATFORM_CLOSE_FILE_FUNC(name) void name(u8 *file_buffer)
+typedef DEF_PLATFORM_CLOSE_FILE_FUNC(platform_close_file_t);
+
+#define DEF_PLATFORM_WRITE_TO_FILE_FUNC(name)                                  \
+    b32 name(const char *string, const char *file_name)
+typedef DEF_PLATFORM_WRITE_TO_FILE_FUNC(platform_write_to_file_t);
+
+typedef struct
+{
+    platform_read_file_t *read_file;
+    platform_close_file_t *close_file;
+    platform_write_to_file_t *write_file;
+} game_platform_services_t;
+
+#define DEF_GAME_UPDATE_AND_RENDER_FUNC(name)                                  \
+    void name(game_offscreen_buffer_t *const restrict game_offscreen_buffer,   \
+              game_input_t *const restrict game_input,                         \
+              game_memory_t *const restrict game_memory,                       \
+              game_platform_services_t *const restrict platform_services)
+
+typedef DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render_t);
 
 #endif

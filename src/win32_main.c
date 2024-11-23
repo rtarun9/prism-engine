@@ -4,7 +4,7 @@
 
 #include "common.h"
 
-#include "game.c"
+#include "game.h"
 
 #include <Windows.h>
 
@@ -156,7 +156,7 @@ internal LRESULT CALLBACK win32_window_proc(HWND window, UINT message,
     return result;
 }
 
-internal u8 *platform_read_file(const char *file_name)
+internal DEF_PLATFORM_READ_FILE_FUNC(platform_read_file)
 {
     ASSERT(file_name);
 
@@ -197,12 +197,12 @@ internal u8 *platform_read_file(const char *file_name)
     return file_buffer;
 }
 
-internal void platform_close_file(u8 *file_buffer)
+internal DEF_PLATFORM_CLOSE_FILE_FUNC(platform_close_file)
 {
     VirtualFree(file_buffer, 0, MEM_RELEASE);
 }
 
-internal b32 platform_write_to_file(const char *string, const char *file_name)
+internal DEF_PLATFORM_WRITE_TO_FILE_FUNC(platform_write_to_file)
 {
     ASSERT(file_name);
     ASSERT(string);
@@ -257,9 +257,37 @@ internal f32 win32_get_time_delta_ms(u64 start, u64 end, u64 counts_per_second)
     return result;
 }
 
+typedef struct
+{
+    game_update_and_render_t *update_and_render;
+} game_t;
+
+internal DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render_stub)
+{
+    return;
+}
+
+game_t load_game_dll(const char *game_dll_file_path)
+{
+    game_t game = {0};
+    game.update_and_render = game_update_and_render_stub;
+
+    HMODULE game_dll = LoadLibraryA(game_dll_file_path);
+    if (game_dll)
+    {
+        game.update_and_render = (game_update_and_render_t *)GetProcAddress(
+            game_dll, "game_update_and_render");
+    }
+
+    return game;
+}
+
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
                     PWSTR command_line, int command_show)
 {
+    // Load the game.
+    game_t game = load_game_dll("game.dll");
+
     // Set thread scheduler granularity to 1ms.
     timeBeginPeriod(1u);
 
@@ -414,8 +442,13 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
         current_game_input_ptr = prev_game_input_ptr;
         prev_game_input_ptr = temp;
 
-        game_update_and_render(&game_offscreen_buffer, &game_input,
-                               &game_memory);
+        game_platform_services_t platform_services = {0};
+        platform_services.read_file = platform_read_file;
+        platform_services.write_file = platform_write_to_file;
+        platform_services.close_file = platform_close_file;
+
+        game.update_and_render(&game_offscreen_buffer, &game_input,
+                               &game_memory, &platform_services);
 
         u64 end_counter_value = win32_get_perf_counter_value();
 

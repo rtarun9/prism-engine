@@ -28,14 +28,12 @@ internal void game_render_gradient_to_framebuffer(
     }
 }
 
-internal void game_update_and_render(
-    game_offscreen_buffer_t *const restrict game_offscreen_buffer,
-    game_input_t *const restrict game_input,
-    game_memory_t *const restrict game_memory)
+__declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
 {
     ASSERT(game_offscreen_buffer);
     ASSERT(game_input);
     ASSERT(game_memory);
+    ASSERT(platform_services);
 
     game_state_t *game_state =
         (game_state_t *)game_memory->permanent_memory_block;
@@ -43,6 +41,8 @@ internal void game_update_and_render(
     if (!game_state->is_initialized)
     {
         game_state->frequency = 256;
+
+        /*
         u8 *file_buffer = platform_read_file("../src/game.c");
         ASSERT(file_buffer);
 
@@ -53,6 +53,7 @@ internal void game_update_and_render(
 
         ASSERT(platform_write_to_file(string_to_write_to_file, "output.txt") ==
                true);
+        */
 
         game_state->is_initialized = true;
     }
