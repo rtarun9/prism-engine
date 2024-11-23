@@ -13,14 +13,6 @@ typedef struct
 
 typedef struct
 {
-    // buffer is an in-out parameter.
-    i16 *buffer;
-    u32 samples_per_second;
-    u32 samples_to_output;
-} game_sound_buffer_t;
-
-typedef struct
-{
     b32 is_key_down;
     u32 state_transition_count;
 } game_key_state_t;
