@@ -215,7 +215,6 @@ internal DEF_PLATFORM_WRITE_TO_FILE_FUNC(platform_write_to_file)
 
     if (file_handle != INVALID_HANDLE_VALUE)
     {
-        // TODO: Best way to get how many bytes we have to write.
         u32 string_len = truncate_u64_to_u32(strlen(string));
 
         DWORD number_of_bytes_written = 0;
@@ -260,6 +259,8 @@ internal f32 win32_get_time_delta_ms(u64 start, u64 end, u64 counts_per_second)
 typedef struct
 {
     game_update_and_render_t *update_and_render;
+    FILETIME dll_last_write_time;
+    HMODULE game_dll;
 } game_t;
 
 internal DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render_stub)
@@ -267,19 +268,54 @@ internal DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render_stub)
     return;
 }
 
+void unload_game_dll(game_t *game)
+{
+    if (game->game_dll)
+    {
+        FreeLibrary(game->game_dll);
+        game->game_dll = NULL;
+        game->update_and_render = game_update_and_render_stub;
+    }
+}
+
+// NOTE: dll_last_write_time has to be filled outside of this function!!!
 game_t load_game_dll(const char *game_dll_file_path)
 {
     game_t game = {0};
     game.update_and_render = game_update_and_render_stub;
 
-    HMODULE game_dll = LoadLibraryA(game_dll_file_path);
-    if (game_dll)
+    // NOTE: The platform does not load the game_dll_file_path directly. This is
+    // because debuggers will "LOCK" the dll because of which hot reloading
+    // won't be possible. To combat this issue, the game_dll_file_path is copied
+    // into a temp dll. This temp dll is what is actually loaded.
+    if (CopyFileA(game_dll_file_path, "game_temp.dll", FALSE))
     {
-        game.update_and_render = (game_update_and_render_t *)GetProcAddress(
-            game_dll, "game_update_and_render");
+        game.game_dll = LoadLibraryA("game_temp.dll");
+        if (game.game_dll)
+        {
+            game.update_and_render = (game_update_and_render_t *)GetProcAddress(
+                game.game_dll, "game_update_and_render");
+        }
+    }
+    else
+    {
+        ASSERT(0);
     }
 
     return game;
+}
+
+internal FILETIME win32_get_last_write_time(const char *file_name)
+{
+    FILETIME result = {0};
+
+    WIN32_FIND_DATAA file_data = {0};
+    if (FindFirstFileA(file_name, &file_data))
+    {
+        result = file_data.ftLastWriteTime;
+    }
+
+    return result;
 }
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
@@ -287,6 +323,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
 {
     // Load the game.
     game_t game = load_game_dll("game.dll");
+    game.dll_last_write_time = win32_get_last_write_time("game.dll");
 
     // Set thread scheduler granularity to 1ms.
     timeBeginPeriod(1u);
@@ -360,6 +397,18 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
 
     while (!quit)
     {
+        // Check if the game dll's last write time has changed. If yes, re-load
+        // the dll.
+        FILETIME dll_last_write_time = win32_get_last_write_time("game.dll");
+
+        if (CompareFileTime(&game.dll_last_write_time, &dll_last_write_time) !=
+            0)
+        {
+            unload_game_dll(&game);
+            game = load_game_dll("game.dll");
+            game.dll_last_write_time = dll_last_write_time;
+        }
+
         MSG message = {0};
 
         ZeroMemory((void *)current_game_input_ptr, sizeof(game_input_t));

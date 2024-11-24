@@ -3,6 +3,10 @@
 mkdir build
 pushd build
 
+:: Script parameters:
+:: No argument -> build game dll and platform exe.
+:: game -> build the game dll
+
 :: Documentation for compiler options : https://learn.microsoft.com/en-us/cpp/build/reference/compiler-options-listed-by-category?view=msvc-170
 
 :: Zi : used to create .pdb that contains information useful for debugging.
@@ -15,7 +19,7 @@ pushd build
 set common_macros=/DPRISM_DEBUG
 
 set win32_compiler_flags=%common_macros%
-set win32_compiler_flags=%win32_compiler_flags% /Zi
+set win32_compiler_flags=%win32_compiler_flags% /Z7
 set win32_compiler_flags=%win32_compiler_flags% /Od
 set win32_compiler_flags=%win32_compiler_flags% /fp:precise
 set win32_compiler_flags=%win32_compiler_flags% /FC
@@ -49,12 +53,27 @@ set win32_linker_flags=user32.lib
 set win32_linker_flags=%win32_linker_flags% gdi32.lib
 set win32_linker_flags=%win32_linker_flags% Winmm.lib
 
-:: /LD : Create a DLL.
+:: LD : Create a DLL.
+:: PDB : Creates a PDB using user specified name.
+:: DEBUG : Tells the linker to create a PDB (program database) that holds debugging information.
 
-cl.exe %win32_compiler_flags% ../src/win32_main.c /Fe:win32_main.exe /link %win32_linker_flags%
-cl.exe %win32_compiler_flags% ../src/game.c /LD /Fe:game.dll 
+:: TODO: How should the pdb and raddgb files be deleted.
+::del *.pdb
+::del *.raddbg
 
-win32_main.exe
+set game_linker_flags=/DEBUG:FULL
+set game_linker_flags=%game_linker_flags% /PDB:game_pdb_%RANDOM%.pdb
+
+IF "%1"=="game" (
+	cl.exe %win32_compiler_flags% ../src/game.c /LD /link %game_linker_flags%
+) else IF "%1"=="" (
+	cl.exe %win32_compiler_flags% ../src/game.c /LD /link %game_linker_flags%
+	cl.exe %win32_compiler_flags% ../src/win32_main.c /Fe:win32_main.exe /link %win32_linker_flags%
+
+	win32_main.exe
+)
+
+
 
 popd
 
