@@ -263,26 +263,26 @@ typedef struct
     HMODULE game_dll;
 } game_t;
 
-internal DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render_stub)
+internal DEF_GAME_UPDATE_AND_RENDER_FUNC(win32_game_update_and_render_stub)
 {
     return;
 }
 
-void unload_game_dll(game_t *game)
+void win32_unload_game_dll(game_t *game)
 {
     if (game->game_dll)
     {
         FreeLibrary(game->game_dll);
         game->game_dll = NULL;
-        game->update_and_render = game_update_and_render_stub;
+        game->update_and_render = win32_game_update_and_render_stub;
     }
 }
 
 // NOTE: dll_last_write_time has to be filled outside of this function!!!
-game_t load_game_dll(const char *game_dll_file_path)
+game_t win32_load_game_dll(const char *game_dll_file_path)
 {
     game_t game = {0};
-    game.update_and_render = game_update_and_render_stub;
+    game.update_and_render = win32_game_update_and_render_stub;
 
     // NOTE: The platform does not load the game_dll_file_path directly. This is
     // because debuggers will "LOCK" the dll because of which hot reloading
@@ -322,7 +322,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
                     PWSTR command_line, int command_show)
 {
     // Load the game.
-    game_t game = load_game_dll("game.dll");
+    game_t game = win32_load_game_dll("game.dll");
     game.dll_last_write_time = win32_get_last_write_time("game.dll");
 
     // Set thread scheduler granularity to 1ms.
@@ -404,8 +404,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
         if (CompareFileTime(&game.dll_last_write_time, &dll_last_write_time) !=
             0)
         {
-            unload_game_dll(&game);
-            game = load_game_dll("game.dll");
+            win32_unload_game_dll(&game);
+            game = win32_load_game_dll("game.dll");
             game.dll_last_write_time = dll_last_write_time;
         }
 
@@ -493,7 +493,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
 
         game_platform_services_t platform_services = {0};
         platform_services.read_file = platform_read_file;
-        platform_services.write_file = platform_write_to_file;
+        platform_services.write_to_file = platform_write_to_file;
         platform_services.close_file = platform_close_file;
 
         game.update_and_render(&game_offscreen_buffer, &game_input,

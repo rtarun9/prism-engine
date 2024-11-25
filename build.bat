@@ -52,6 +52,7 @@ set win32_compiler_flags=%win32_compiler_flags% /WX
 set win32_linker_flags=user32.lib
 set win32_linker_flags=%win32_linker_flags% gdi32.lib
 set win32_linker_flags=%win32_linker_flags% Winmm.lib
+set win32_linker_flags=%win32_linker_flags% %VULKAN_SDK%\Lib\vulkan-1.lib
 
 :: LD : Create a DLL.
 :: PDB : Creates a PDB using user specified name.
@@ -73,8 +74,4 @@ IF "%1"=="game" (
 	win32_main.exe
 )
 
-
-
 popd
-
-

@@ -40,6 +40,11 @@ typedef struct
     u32 frequency;
 
     b32 is_initialized;
+
+    // Player coordinates.
+    // The center of framebuffer is 0.0, and extends on either side go to 1/-1.
+    f32 player_x;
+    f32 player_y;
 } game_state_t;
 
 typedef struct
@@ -63,7 +68,7 @@ typedef struct
 {
     platform_read_file_t *read_file;
     platform_close_file_t *close_file;
-    platform_write_to_file_t *write_file;
+    platform_write_to_file_t *write_to_file;
 } game_platform_services_t;
 
 #define DEF_GAME_UPDATE_AND_RENDER_FUNC(name)                                  \
