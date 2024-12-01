@@ -2,6 +2,26 @@
 
 #include "common.h"
 
+typedef struct
+{
+    f32 x;
+    f32 y;
+
+    i32 tile_map_index_x;
+    i32 tile_map_index_y;
+} game_raw_position_t;
+
+// NOTE: For now raw and canonical are pretty similar.
+// But, once total FP positions are used, this will no longer be relevant.
+typedef struct
+{
+    u32 tile_index_x;
+    u32 tile_index_y;
+
+    u32 tile_map_index_x;
+    u32 tile_map_index_y;
+} game_canonical_position_t;
+
 internal void game_render_rectangle(game_offscreen_buffer_t *const buffer,
                                     f32 top_left_x, f32 top_left_y, u32 width,
                                     u32 height, f32 normalized_red,
@@ -84,10 +104,81 @@ internal void game_render_gradient_to_framebuffer(
     }
 }
 
-game_tile_map_t *get_tile_map_from_world(game_world_t *const restrict world,
-                                         u32 tile_map_x, u32 tile_map_y)
+internal game_canonical_position_t get_canoniacl_position_from_ray(
+    game_world_t *const restrict world, game_raw_position_t raw_position)
 {
     ASSERT(world);
+
+    game_canonical_position_t result = {0};
+
+    i32 tile_index_x = truncate_f32_to_i32(
+        (raw_position.x - world->top_left_x) / world->tile_width);
+
+    i32 tile_index_y = truncate_f32_to_i32(
+        (raw_position.x - world->top_left_y) / world->tile_height);
+
+    if (tile_index_x < 0)
+    {
+        tile_index_x += TILE_MAP_DIM_X;
+        raw_position.tile_map_index_x--;
+    }
+
+    if (tile_index_x >= TILE_MAP_DIM_X)
+    {
+        tile_index_x -= TILE_MAP_DIM_X;
+        raw_position.tile_map_index_x++;
+    }
+
+    if (tile_index_y < 0)
+    {
+        tile_index_y += TILE_MAP_DIM_Y;
+        raw_position.tile_map_index_y--;
+    }
+
+    if (tile_index_y >= TILE_MAP_DIM_Y)
+    {
+        tile_index_y -= TILE_MAP_DIM_Y;
+        raw_position.tile_map_index_y++;
+    }
+
+    if (raw_position.tile_map_index_x < 0)
+    {
+        raw_position.tile_map_index_x = world->tile_map_count_x - 1;
+    }
+
+    if (raw_position.tile_map_index_x >= world->tile_map_count_x)
+    {
+        raw_position.tile_map_index_x = 0;
+    }
+
+    if (raw_position.tile_map_index_y < 0)
+    {
+        raw_position.tile_map_index_y = world->tile_map_count_y - 1;
+    }
+
+    if (raw_position.tile_map_index_y >= world->tile_map_count_y)
+    {
+        raw_position.tile_map_index_y = 0;
+    }
+
+    result.tile_map_index_x = (u32)raw_position.tile_map_index_x;
+    result.tile_map_index_y = (u32)raw_position.tile_map_index_y;
+
+    result.tile_index_x = (u32)tile_index_x;
+    result.tile_index_y = (u32)tile_index_y;
+
+    return result;
+}
+
+internal game_tile_map_t *get_tile_map_from_world(
+    game_world_t *const restrict world, u32 tile_map_x, u32 tile_map_y)
+{
+    ASSERT(world);
+
+    ASSERT(world->tile_map_count_x >= 0 &&
+           world->tile_map_count_x < world.tile_map_count_x);
+    ASSERT(world->tile_map_count_y >= 0 &&
+           world->tile_map_count_y < world.tile_map_count_y);
 
     game_tile_map_t *tile_map =
         &world->tile_maps[tile_map_x + tile_map_y * world->tile_map_count_x];
@@ -96,53 +187,53 @@ game_tile_map_t *get_tile_map_from_world(game_world_t *const restrict world,
     return tile_map;
 }
 
-u32 get_tile_map_value(game_tile_map_t *const restrict tile_map, f32 x, f32 y)
+internal u32 get_tile_map_value(game_tile_map_t *const restrict tile_map,
+                                const u32 tile_index_x, u32 tile_index_y)
 {
     ASSERT(tile_map);
 
-    i32 tile_map_x_coord =
-        truncate_f32_to_i32((x - tile_map->top_left_x) / tile_map->tile_width);
-
-    i32 tile_map_y_coord =
-        truncate_f32_to_i32((y - tile_map->top_left_y) / tile_map->tile_height);
-
-    if (tile_map_x_coord >= 0 && tile_map_x_coord < (i32)TILE_MAP_DIM_X &&
-        tile_map_y_coord >= 0 && tile_map_y_coord < (i32)TILE_MAP_DIM_Y)
+    if (tile_index_x >= 0 && tile_index_x < (i32)TILE_MAP_DIM_X &&
+        tile_index_y >= 0 && tile_index_y < (i32)TILE_MAP_DIM_Y)
     {
-        return tile_map->tile_map[tile_map_y_coord][tile_map_x_coord];
+        return tile_map->tile_map[tile_index_y][tile_index_x];
     }
 
     return INVALID_TILE_MAP_VALUE;
 }
 
-u32 get_tile_map_value_in_world(game_world_t *const restrict world,
-                                u32 tile_map_x, u32 tile_map_y, f32 x, f32 y)
+internal u32
+get_tile_map_value_in_world(game_world_t *const restrict world,
+                            const game_canonical_position_t position)
 
 {
-    game_tile_map_t *tile_map =
-        get_tile_map_from_world(world, tile_map_x, tile_map_y);
+    game_tile_map_t *tile_map = get_tile_map_from_world(
+        world, position.tile_map_index_x, position.tile_map_index_y);
     ASSERT(tile_map);
 
-    return get_tile_map_value(tile_map, x, y);
+    return get_tile_map_value(tile_map, position.tile_index_x,
+                              position.tile_index_y);
 }
 
-b32 is_tile_map_point_empty(game_tile_map_t *const restrict tile_map, f32 x,
-                            f32 y)
+internal b32 is_tile_map_point_empty(game_tile_map_t *const restrict tile_map,
+                                     const u32 tile_index_x,
+                                     const u32 tile_index_y)
 {
     ASSERT(tile_map);
 
-    return get_tile_map_value(tile_map, x, y) == 0;
+    return get_tile_map_value(tile_map, tile_index_x, tile_index_y) == 0;
 }
 
-b32 is_tile_map_point_empty_in_world(game_world_t *const restrict world,
-                                     u32 tile_map_x, u32 tile_map_y, f32 x,
-                                     f32 y)
+internal b32
+is_tile_map_point_empty_in_world(game_world_t *const restrict world,
+                                 const game_canonical_position_t position)
 
 {
-    game_tile_map_t *tile_map =
-        get_tile_map_from_world(world, tile_map_x, tile_map_y);
+    // Convert x and y first into tile map coords.
+    game_tile_map_t *tile_map = get_tile_map_from_world(
+        world, position.tile_map_index_x, position.tile_map_index_y);
 
-    return is_tile_map_point_empty(tile_map, x, y);
+    return is_tile_map_point_empty(tile_map, position.tile_index_x,
+                                   position.tile_index_y);
 }
 
 __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)

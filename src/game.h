@@ -39,12 +39,6 @@ typedef struct
 typedef struct
 {
     u32 tile_map[TILE_MAP_DIM_Y][TILE_MAP_DIM_X];
-
-    f32 top_left_x;
-    f32 top_left_y;
-
-    u32 tile_width;
-    u32 tile_height;
 } game_tile_map_t;
 
 typedef struct
@@ -53,6 +47,12 @@ typedef struct
 
     u32 tile_map_count_x;
     u32 tile_map_count_y;
+
+    f32 top_left_x;
+    f32 top_left_y;
+
+    u32 tile_width;
+    u32 tile_height;
 } game_world_t;
 
 typedef struct
