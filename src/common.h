@@ -89,4 +89,27 @@ internal u8 truncate_f32_to_u8(const f32 value)
     return result;
 }
 
+internal i32 round_f32_to_i32(const f32 value)
+{
+    ASSERT(value <= 0xffffffff);
+
+    i32 result = (i32)(value + 0.5f);
+    return result;
+}
+
+internal u32 round_f32_to_u32(const f32 value)
+{
+    ASSERT(value <= 0xffffffff);
+
+    u32 result = (u32)(value + 0.5f);
+    return result;
+}
+
+internal u8 round_f32_to_u8(const f32 value)
+{
+    ASSERT(value <= 0xff);
+
+    u8 result = (u8)(value + 0.5f);
+    return result;
+}
 #endif

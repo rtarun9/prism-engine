@@ -2,9 +2,12 @@
 
 #include "common.h"
 
+// color values are between 0 and 1.0f.
 internal void game_render_rectangle(game_offscreen_buffer_t *const buffer,
                                     f32 top_left_x, f32 top_left_y, u32 width,
-                                    u32 height)
+                                    u32 height, f32 normalized_red,
+                                    f32 normalized_green, f32 normalized_blue,
+                                    f32 normalized_alpha)
 {
     ASSERT(buffer);
 
@@ -30,9 +33,9 @@ internal void game_render_rectangle(game_offscreen_buffer_t *const buffer,
 
     // Convert coords to framebuffer coords.
     u32 fb_top_left_x =
-        truncate_f32_to_u32(((top_left_x + 1.0f) / 2.0f) * buffer->width);
+        round_f32_to_u32(((top_left_x + 1.0f) / 2.0f) * buffer->width);
     u32 fb_top_left_y =
-        truncate_f32_to_u32(((top_left_y + 1.0f) / 2.0f) * buffer->height);
+        round_f32_to_u32(((top_left_y + 1.0f) / 2.0f) * buffer->height);
 
     if (fb_top_left_x + width >= buffer->width)
     {
@@ -48,19 +51,21 @@ internal void game_render_rectangle(game_offscreen_buffer_t *const buffer,
                 fb_top_left_x);
     u32 pitch = buffer->width;
 
-    for (u32 y = 0; y <= height; y++)
+    const u8 red = round_f32_to_u8(normalized_red * 255.0f);
+    const u8 green = round_f32_to_u8(normalized_green * 255.0f);
+    const u8 blue = round_f32_to_u8(normalized_blue * 255.0f);
+    const u8 alpha = round_f32_to_u8(normalized_alpha * 255.0f);
+
+    // Layout in memory is : XX RR GG BB.
+    const u32 color = blue | (green << 8) | (red << 16) | (alpha << 24);
+
+    for (u32 y = 0; y < height; y++)
     {
         u32 *pixel = row;
-        for (u32 x = 0; x <= width; x++)
+        for (u32 x = 0; x < width; x++)
         {
-
-            u8 red = 0xff;
-            u8 blue = 0xf0;
-            u8 green = 0xff;
-            u8 alpha = 0xff;
-
-            // Layout in memory is : XX RR GG BB.
-            *pixel++ = blue | (green << 8) | (red << 16) | (alpha << 24);
+            ASSERT(pixel);
+            *pixel++ = color;
         }
         row += pitch;
     }
@@ -164,5 +169,52 @@ __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
         game_offscreen_buffer, game_state->x_shift, game_state->y_shift);
 
     game_render_rectangle(game_offscreen_buffer, game_state->player_x,
-                          game_state->player_y, 50, 50);
+                          game_state->player_y, 50, 50, 0.1f, 0.2f, 1.0f, 1.0f);
+    // Basic tile map rendering.
+    // clang-format off
+    u32 tile_map[9 * 16] = {
+    1, 1, 1, 1,  1, 1, 1, 1,  0, 1, 1, 1,  1, 1, 1, 1,
+    1, 1, 0, 0,  0, 1, 0, 0,  0, 0, 0, 0,  0, 1, 0, 1,
+    1, 1, 0, 0,  0, 0, 0, 0,  1, 0, 0, 0,  0, 0, 1, 1,
+    1, 0, 0, 0,  0, 0, 0, 0,  1, 0, 0, 0,  0, 0, 0, 1,
+    0, 0, 0, 0,  0, 1, 0, 0,  1, 0, 0, 0,  0, 0, 0, 0,
+    1, 1, 0, 0,  0, 1, 0, 0,  1, 0, 0, 0,  0, 1, 0, 1,
+    1, 0, 0, 0,  0, 1, 0, 0,  1, 0, 0, 0,  1, 0, 0, 1,
+    1, 1, 1, 1,  1, 0, 0, 0,  0, 0, 0, 0,  0, 1, 0, 1,
+    1, 1, 1, 1,  1, 1, 1, 1,  0, 1, 1, 1,  1, 1, 1, 1};
+
+    // clang-format on
+    u32 top_left_x = 0;
+    u32 top_left_y = 0;
+
+    u32 tile_width = 50;
+    u32 tile_height = 50;
+
+    for (u32 y = 0; y < 9; y++)
+    {
+        for (u32 x = 0; x < 16; x++)
+        {
+            f32 tile_top_left_x = (f32)(top_left_x + (x * tile_width));
+            f32 tile_top_left_y = (f32)(top_left_y + (y * tile_height));
+
+            // Convert top left position's in range of -1 to 1.
+            const f32 buffer_space_top_left_x =
+                (tile_top_left_x / (game_offscreen_buffer->width)) * 2.0f -
+                1.0f;
+
+            const f32 buffer_space_top_left_y =
+                tile_top_left_y / (game_offscreen_buffer->height) * 2.0f - 1.0f;
+
+            f32 color = 0.0f;
+            if (tile_map[x + y * 16] == 1u)
+            {
+                color = 1.0f;
+            }
+
+            game_render_rectangle(game_offscreen_buffer,
+                                  buffer_space_top_left_x,
+                                  buffer_space_top_left_y, tile_width,
+                                  tile_height, color, color, color, 1.0f);
+        }
+    }
 }
