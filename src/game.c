@@ -122,57 +122,17 @@ __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
         ASSERT(platform_services->write_to_file(string_to_write_to_file,
                                                 "output.txt") == true);
 
-        game_state->player_x = 0.0f;
+        game_state->player_x = 0.001f;
         game_state->player_y = 0.0f;
 
         game_state->is_initialized = true;
     }
 
-    const f32 player_movement_speed = game_input->delta_time * 0.001f;
+#define TILE_MAP_DIM_X 16
+#define TILE_MAP_DIM_Y 9
 
-    if (game_input->keyboard_state.key_w.is_key_down)
-    {
-        game_state->x_shift += 4;
-        game_state->frequency++;
-
-        game_state->player_y -= player_movement_speed;
-    }
-
-    if (game_input->keyboard_state.key_s.is_key_down)
-    {
-        game_state->x_shift--;
-        game_state->frequency--;
-
-        game_state->player_y += player_movement_speed;
-    }
-
-    if (game_input->keyboard_state.key_a.is_key_down)
-    {
-        game_state->y_shift++;
-        game_state->frequency--;
-
-        game_state->player_x -= player_movement_speed;
-    }
-
-    if (game_input->keyboard_state.key_d.is_key_down)
-    {
-        game_state->y_shift--;
-        game_state->frequency++;
-
-        game_state->player_x += player_movement_speed;
-    }
-
-    game_state->y_shift++;
-    game_state->x_shift++;
-
-    game_render_gradient_to_framebuffer(
-        game_offscreen_buffer, game_state->x_shift, game_state->y_shift);
-
-    game_render_rectangle(game_offscreen_buffer, game_state->player_x,
-                          game_state->player_y, 50, 50, 0.1f, 0.2f, 1.0f, 1.0f);
-    // Basic tile map rendering.
     // clang-format off
-    u32 tile_map[9 * 16] = {
+    u32 tile_map[TILE_MAP_DIM_X * TILE_MAP_DIM_Y] = {
     1, 1, 1, 1,  1, 1, 1, 1,  0, 1, 1, 1,  1, 1, 1, 1,
     1, 1, 0, 0,  0, 1, 0, 0,  0, 0, 0, 0,  0, 1, 0, 1,
     1, 1, 0, 0,  0, 0, 0, 0,  1, 0, 0, 0,  0, 0, 1, 1,
@@ -187,12 +147,86 @@ __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
     u32 top_left_x = 0;
     u32 top_left_y = 0;
 
-    u32 tile_width = 50;
-    u32 tile_height = 50;
+    u32 tile_width = 90;
+    u32 tile_height = 90;
 
-    for (u32 y = 0; y < 9; y++)
+    const f32 player_movement_speed = game_input->delta_time * 0.001f;
+    b32 can_player_move = true;
+
+    f32 new_player_x = game_state->player_x;
+    f32 new_player_y = game_state->player_y;
+
+    if (game_input->keyboard_state.key_w.is_key_down)
     {
-        for (u32 x = 0; x < 16; x++)
+        game_state->x_shift += 4;
+        game_state->frequency++;
+
+        new_player_y -= player_movement_speed;
+    }
+
+    if (game_input->keyboard_state.key_s.is_key_down)
+    {
+        game_state->x_shift--;
+        game_state->frequency--;
+
+        new_player_y += player_movement_speed;
+    }
+
+    if (game_input->keyboard_state.key_a.is_key_down)
+    {
+        game_state->y_shift++;
+        game_state->frequency--;
+
+        new_player_x -= player_movement_speed;
+    }
+
+    if (game_input->keyboard_state.key_d.is_key_down)
+    {
+        game_state->y_shift--;
+        game_state->frequency++;
+
+        new_player_x += player_movement_speed;
+    }
+
+    game_state->y_shift++;
+    game_state->x_shift++;
+
+    // Check for player and tilemap collision.
+    // Convert player coords to fb coords.
+    i32 player_tile_map_coords_x =
+        truncate_f32_to_i32((((new_player_x + 1.0f) / 2.0f) - top_left_x) *
+                            game_offscreen_buffer->width / tile_width);
+    i32 player_tile_map_coords_y =
+        truncate_f32_to_i32((((new_player_y + 1.0f) / 2.0f) - top_left_y) *
+                            game_offscreen_buffer->height / tile_height);
+
+    if (player_tile_map_coords_x >= 0 &&
+        player_tile_map_coords_x < (i32)TILE_MAP_DIM_X &&
+        player_tile_map_coords_y >= 0 &&
+        player_tile_map_coords_y < (i32)TILE_MAP_DIM_Y)
+    {
+        if (tile_map[player_tile_map_coords_x +
+                     player_tile_map_coords_y * TILE_MAP_DIM_X] == 1u)
+        {
+            can_player_move = false;
+        }
+    }
+
+    // Convert player coords to tile map coords.
+    if (can_player_move)
+    {
+        game_state->player_x = new_player_x;
+        game_state->player_y = new_player_y;
+    }
+
+    game_render_gradient_to_framebuffer(
+        game_offscreen_buffer, game_state->x_shift, game_state->y_shift);
+
+    // Basic tile map rendering.
+
+    for (u32 y = 0; y < TILE_MAP_DIM_Y; y++)
+    {
+        for (u32 x = 0; x < TILE_MAP_DIM_X; x++)
         {
             f32 tile_top_left_x = (f32)(top_left_x + (x * tile_width));
             f32 tile_top_left_y = (f32)(top_left_y + (y * tile_height));
@@ -206,7 +240,7 @@ __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
                 tile_top_left_y / (game_offscreen_buffer->height) * 2.0f - 1.0f;
 
             f32 color = 0.0f;
-            if (tile_map[x + y * 16] == 1u)
+            if (tile_map[x + y * TILE_MAP_DIM_X] == 1u)
             {
                 color = 1.0f;
             }
@@ -217,4 +251,8 @@ __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
                                   tile_height, color, color, color, 1.0f);
         }
     }
+
+    // Render the player.
+    game_render_rectangle(game_offscreen_buffer, game_state->player_x,
+                          game_state->player_y, 50, 50, 0.1f, 0.2f, 1.0f, 1.0f);
 }
