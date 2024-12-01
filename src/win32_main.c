@@ -91,6 +91,8 @@ internal void win32_resize_framebuffer(win32_offscreen_buffer_t *const buffer,
 internal void win32_handle_key_input(game_key_state_t *const restrict input,
                                      b32 is_key_down)
 {
+    ASSERT(input);
+
     if (input->is_key_down != is_key_down)
     {
         input->state_transition_count++;
@@ -110,8 +112,7 @@ internal LRESULT CALLBACK win32_window_proc(HWND window, UINT message,
     case WM_KEYUP:
     case WM_SYSKEYDOWN:
     case WM_SYSKEYUP: {
-        ASSERT(
-            0 &&
+        INVALID_CODE_PATH(
             "Key up and key down should not be handled by the window proc!!!");
     }
     break;
@@ -131,19 +132,19 @@ internal LRESULT CALLBACK win32_window_proc(HWND window, UINT message,
 
         EndPaint(window, &paint);
 
-        OutputDebugStringW(L"WM_PAINT\n");
+        // OutputDebugStringW(L"WM_PAINT\n");
     }
     break;
 
     case WM_CLOSE: {
         DestroyWindow(window);
-        OutputDebugStringW(L"WM_CLOSE\n");
+        // OutputDebugStringW(L"WM_CLOSE\n");
     }
     break;
 
     case WM_DESTROY: {
         PostQuitMessage(0);
-        OutputDebugStringW(L"WM_DESTROY\n");
+        // OutputDebugStringW(L"WM_DESTROY\n");
     }
     break;
 
@@ -300,8 +301,8 @@ game_t win32_load_game_dll(const char *game_dll_file_path)
     else
     {
         DWORD error = GetLastError();
-
-        ASSERT(0);
+        INVALID_CODE_PATH("Failed to copy dll into a temp dll file. This is "
+                          "important since debuggers will lock the dll");
     }
 
     return game;
@@ -333,16 +334,16 @@ typedef enum
 typedef struct
 {
     HANDLE input_file_handle;
-    HANDLE game_state_file_handle;
+    HANDLE game_memory_file_handle;
 } win32_state_t;
 
 win32_state_t win32_start_recording(game_memory_t *const restrict game_memory)
 {
     ASSERT(game_memory);
 
-    // Create and open file for game input and game_state.
+    // Create and open file for game input and game memory.
     HANDLE game_state_handle =
-        CreateFileA("prism_game_state.txt", GENERIC_WRITE, 0, NULL,
+        CreateFileA("prism_game_memory.txt", GENERIC_WRITE, 0, NULL,
                     CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     ASSERT(game_state_handle != INVALID_HANDLE_VALUE);
 
@@ -365,7 +366,7 @@ win32_state_t win32_start_recording(game_memory_t *const restrict game_memory)
 
     win32_state_t state = {0};
     state.input_file_handle = input_file_handle;
-    state.game_state_file_handle = game_state_handle;
+    state.game_memory_file_handle = game_state_handle;
 
     return state;
 }
@@ -375,21 +376,23 @@ void win32_stop_recording(win32_state_t *const restrict state)
     ASSERT(state);
 
     ASSERT(state->input_file_handle != INVALID_HANDLE_VALUE);
-    ASSERT(state->game_state_file_handle != INVALID_HANDLE_VALUE);
+    ASSERT(state->game_memory_file_handle != INVALID_HANDLE_VALUE);
 
     CloseHandle(state->input_file_handle);
-    CloseHandle(state->game_state_file_handle);
+    CloseHandle(state->game_memory_file_handle);
 }
 
 void win32_start_playback(win32_state_t *const restrict state,
                           game_memory_t *restrict game_memory)
 {
     ASSERT(state);
+    ASSERT(game_memory);
+    ASSERT(game_memory->permanent_memory_block);
 
-    HANDLE game_state_handle =
-        CreateFileA("prism_game_state.txt", GENERIC_READ, 0, NULL,
+    HANDLE game_memory_handle =
+        CreateFileA("prism_game_memory.txt", GENERIC_READ, 0, NULL,
                     OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-    ASSERT(game_state_handle != INVALID_HANDLE_VALUE);
+    ASSERT(game_memory_handle != INVALID_HANDLE_VALUE);
 
     HANDLE input_file_handle =
         CreateFileA("prism_input_handle.txt", GENERIC_READ, 0, NULL,
@@ -397,26 +400,22 @@ void win32_start_playback(win32_state_t *const restrict state,
 
     ASSERT(input_file_handle != INVALID_HANDLE_VALUE);
 
-    DWORD game_state_file_size = GetFileSize(game_state_handle, NULL);
-    DWORD input_file_size = GetFileSize(input_file_handle, NULL);
-
     state->input_file_handle = input_file_handle;
-    state->game_state_file_handle = game_state_handle;
+    state->game_memory_file_handle = game_memory_handle;
 
     DWORD bytes_read = 0;
     // Read input and game state from memory.
-    if (!ReadFile(state->game_state_file_handle,
+    if (!ReadFile(state->game_memory_file_handle,
                   game_memory->permanent_memory_block,
                   truncate_u64_to_u32(game_memory->permanent_memory_block_size),
                   &bytes_read, NULL))
     {
         DWORD error = GetLastError();
-        ASSERT(0);
+        INVALID_CODE_PATH(
+            "Failed to read game memory state from file during live loopback");
     }
 
     ASSERT(bytes_read == game_memory->permanent_memory_block_size);
-
-    ASSERT(game_memory->permanent_memory_block);
 }
 
 void win32_stop_playback(win32_state_t *const restrict state)
@@ -424,10 +423,10 @@ void win32_stop_playback(win32_state_t *const restrict state)
     ASSERT(state);
 
     ASSERT(state->input_file_handle != INVALID_HANDLE_VALUE);
-    ASSERT(state->game_state_file_handle != INVALID_HANDLE_VALUE);
+    ASSERT(state->game_memory_file_handle != INVALID_HANDLE_VALUE);
 
     CloseHandle(state->input_file_handle);
-    CloseHandle(state->game_state_file_handle);
+    CloseHandle(state->game_memory_file_handle);
 }
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
@@ -491,6 +490,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
     game_memory.permanent_memory_block =
         VirtualAlloc(0, game_memory.permanent_memory_block_size,
                      MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+
     ASSERT(game_memory.permanent_memory_block);
 
     f32 delta_time = 0.0f;
@@ -586,7 +586,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
                     else if (state_type == win32_state_type_playback)
                     {
                         CloseHandle(recording_state.input_file_handle);
-                        CloseHandle(recording_state.game_state_file_handle);
+                        CloseHandle(recording_state.game_memory_file_handle);
 
                         state_type = win32_state_type_none;
                     }
@@ -645,16 +645,6 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
             ASSERT(WriteFile(recording_state.input_file_handle,
                              (void *)&game_input, sizeof(game_input_t), NULL,
                              NULL));
-
-            DWORD game_state_file_size =
-                GetFileSize(recording_state.game_state_file_handle, NULL);
-            DWORD input_file_size =
-                GetFileSize(recording_state.input_file_handle, NULL);
-
-            char text[256];
-            sprintf(text, "game state file size : %d input file size : %d",
-                    game_state_file_size, input_file_size);
-            OutputDebugStringA(text);
         }
 
         if (state_type == win32_state_type_playback)

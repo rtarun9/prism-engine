@@ -12,8 +12,11 @@
         int *ptr = NULL;                                                       \
         *ptr = 0;                                                              \
     }
+#define INVALID_CODE_PATH(x) ASSERT(0 && x)
+
 #else
 #define ASSERT(x)
+#define INVALID_CODE_PATH(x)
 #endif
 
 // Typedefs to primitive datatypes.
@@ -49,7 +52,8 @@ typedef double f64;
 
 #define ARRAY_COUNT(x) (sizeof(x) / sizeof(x[0]))
 
-internal u32 truncate_u64_to_u32(const u64 value)
+// Trunc / floor /  round functions.
+inline u32 truncate_u64_to_u32(const u64 value)
 {
     ASSERT(value <= 0xffffffff);
 
@@ -57,7 +61,7 @@ internal u32 truncate_u64_to_u32(const u64 value)
     return result;
 }
 
-internal i32 truncate_i64_to_i32(const i64 value)
+inline i32 truncate_i64_to_i32(const i64 value)
 {
     ASSERT(value <= 0xffffffff);
 
@@ -65,7 +69,7 @@ internal i32 truncate_i64_to_i32(const i64 value)
     return result;
 }
 
-internal i32 truncate_f32_to_i32(const f32 value)
+inline i32 truncate_f32_to_i32(const f32 value)
 {
     ASSERT(value <= 0xffffffff);
 
@@ -73,7 +77,7 @@ internal i32 truncate_f32_to_i32(const f32 value)
     return result;
 }
 
-internal u32 truncate_f32_to_u32(const f32 value)
+inline u32 truncate_f32_to_u32(const f32 value)
 {
     ASSERT(value <= 0xffffffff);
 
@@ -81,7 +85,7 @@ internal u32 truncate_f32_to_u32(const f32 value)
     return result;
 }
 
-internal u8 truncate_f32_to_u8(const f32 value)
+inline u8 truncate_f32_to_u8(const f32 value)
 {
     ASSERT(value <= 0xff);
 
@@ -89,7 +93,7 @@ internal u8 truncate_f32_to_u8(const f32 value)
     return result;
 }
 
-internal i32 round_f32_to_i32(const f32 value)
+inline i32 round_f32_to_i32(const f32 value)
 {
     ASSERT(value <= 0xffffffff);
 
@@ -97,7 +101,7 @@ internal i32 round_f32_to_i32(const f32 value)
     return result;
 }
 
-internal u32 round_f32_to_u32(const f32 value)
+inline u32 round_f32_to_u32(const f32 value)
 {
     ASSERT(value <= 0xffffffff);
 
@@ -105,11 +109,12 @@ internal u32 round_f32_to_u32(const f32 value)
     return result;
 }
 
-internal u8 round_f32_to_u8(const f32 value)
+inline u8 round_f32_to_u8(const f32 value)
 {
     ASSERT(value <= 0xff);
 
     u8 result = (u8)(value + 0.5f);
     return result;
 }
+
 #endif
