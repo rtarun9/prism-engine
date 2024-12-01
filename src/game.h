@@ -31,6 +31,30 @@ typedef struct
     f32 delta_time;
 } game_input_t;
 
+#define TILE_MAP_DIM_X 17u
+#define TILE_MAP_DIM_Y 9u
+
+#define INVALID_TILE_MAP_VALUE 0xffffffff
+
+typedef struct
+{
+    u32 tile_map[TILE_MAP_DIM_Y][TILE_MAP_DIM_X];
+
+    f32 top_left_x;
+    f32 top_left_y;
+
+    u32 tile_width;
+    u32 tile_height;
+} game_tile_map_t;
+
+typedef struct
+{
+    game_tile_map_t *tile_maps;
+
+    u32 tile_map_count_x;
+    u32 tile_map_count_y;
+} game_world_t;
+
 typedef struct
 {
     i32 x_shift;
@@ -41,10 +65,13 @@ typedef struct
 
     b32 is_initialized;
 
-    // Player coordinates.
-    // The center of framebuffer is 0.0, and extends on either side go to 1/-1.
     f32 player_x;
     f32 player_y;
+
+    u32 player_width;
+    u32 player_height;
+
+    game_world_t game_world;
 } game_state_t;
 
 typedef struct

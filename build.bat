@@ -43,11 +43,14 @@ REM Below are explanations for the various warnings that are ignored.
 :: C4996 : sprintf deprecation (NOTE: sprintf should not be used in future).
 :: C4189 : Local variable initialized but not referenced.
 
+:: std : set version of C to use.
+
 set win32_compiler_flags=%win32_compiler_flags% /wd4100
 set win32_compiler_flags=%win32_compiler_flags% /wd4127
 set win32_compiler_flags=%win32_compiler_flags% /wd4996
 set win32_compiler_flags=%win32_compiler_flags% /wd4189
 set win32_compiler_flags=%win32_compiler_flags% /WX
+set win32_compiler_flags=%win32_compiler_flags% /std:c17
 
 set win32_linker_flags=user32.lib
 set win32_linker_flags=%win32_linker_flags% gdi32.lib

@@ -2,7 +2,6 @@
 
 #include "common.h"
 
-// color values are between 0 and 1.0f.
 internal void game_render_rectangle(game_offscreen_buffer_t *const buffer,
                                     f32 top_left_x, f32 top_left_y, u32 width,
                                     u32 height, f32 normalized_red,
@@ -11,31 +10,19 @@ internal void game_render_rectangle(game_offscreen_buffer_t *const buffer,
 {
     ASSERT(buffer);
 
-    if (top_left_x < -1.0f)
+    if (top_left_x < 0.0)
     {
-        top_left_x = -1.0f;
+        top_left_x = 0.0f;
     }
 
-    if (top_left_x > 1.0f)
+    if (top_left_y < 0.0)
     {
-        top_left_x = 1.0f;
-    }
-
-    if (top_left_y < -1.0f)
-    {
-        top_left_y = -1.0f;
-    }
-
-    if (top_left_y > 1.0f)
-    {
-        top_left_y = 1.0f;
+        top_left_y = 0.0f;
     }
 
     // Convert coords to framebuffer coords.
-    u32 fb_top_left_x =
-        round_f32_to_u32(((top_left_x + 1.0f) / 2.0f) * buffer->width);
-    u32 fb_top_left_y =
-        round_f32_to_u32(((top_left_y + 1.0f) / 2.0f) * buffer->height);
+    u32 fb_top_left_x = round_f32_to_u32(top_left_x);
+    u32 fb_top_left_y = round_f32_to_u32(top_left_y);
 
     if (fb_top_left_x + width >= buffer->width)
     {
@@ -97,6 +84,67 @@ internal void game_render_gradient_to_framebuffer(
     }
 }
 
+game_tile_map_t *get_tile_map_from_world(game_world_t *const restrict world,
+                                         u32 tile_map_x, u32 tile_map_y)
+{
+    ASSERT(world);
+
+    game_tile_map_t *tile_map =
+        &world->tile_maps[tile_map_x + tile_map_y * world->tile_map_count_x];
+    ASSERT(tile_map);
+
+    return tile_map;
+}
+
+u32 get_tile_map_value(game_tile_map_t *const restrict tile_map, f32 x, f32 y)
+{
+    ASSERT(tile_map);
+
+    i32 tile_map_x_coord =
+        truncate_f32_to_i32((x - tile_map->top_left_x) / tile_map->tile_width);
+
+    i32 tile_map_y_coord =
+        truncate_f32_to_i32((y - tile_map->top_left_y) / tile_map->tile_height);
+
+    if (tile_map_x_coord >= 0 && tile_map_x_coord < (i32)TILE_MAP_DIM_X &&
+        tile_map_y_coord >= 0 && tile_map_y_coord < (i32)TILE_MAP_DIM_Y)
+    {
+        return tile_map->tile_map[tile_map_y_coord][tile_map_x_coord];
+    }
+
+    return INVALID_TILE_MAP_VALUE;
+}
+
+u32 get_tile_map_value_in_world(game_world_t *const restrict world,
+                                u32 tile_map_x, u32 tile_map_y, f32 x, f32 y)
+
+{
+    game_tile_map_t *tile_map =
+        get_tile_map_from_world(world, tile_map_x, tile_map_y);
+    ASSERT(tile_map);
+
+    return get_tile_map_value(tile_map, x, y);
+}
+
+b32 is_tile_map_point_empty(game_tile_map_t *const restrict tile_map, f32 x,
+                            f32 y)
+{
+    ASSERT(tile_map);
+
+    return get_tile_map_value(tile_map, x, y) == 0;
+}
+
+b32 is_tile_map_point_empty_in_world(game_world_t *const restrict world,
+                                     u32 tile_map_x, u32 tile_map_y, f32 x,
+                                     f32 y)
+
+{
+    game_tile_map_t *tile_map =
+        get_tile_map_from_world(world, tile_map_x, tile_map_y);
+
+    return is_tile_map_point_empty(tile_map, x, y);
+}
+
 __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
 {
     ASSERT(game_offscreen_buffer);
@@ -122,35 +170,45 @@ __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
         ASSERT(platform_services->write_to_file(string_to_write_to_file,
                                                 "output.txt") == true);
 
-        game_state->player_x = 0.001f;
-        game_state->player_y = 0.0f;
+        game_state->player_x = game_offscreen_buffer->width / 1.9f;
+        game_state->player_y = game_offscreen_buffer->height / 2.0f;
+
+        game_state->player_width = 50u;
+        game_state->player_height = 50u;
+
+        game_state->game_world.tile_map_count_x = 2;
+        game_state->game_world.tile_map_count_y = 2;
 
         game_state->is_initialized = true;
     }
 
-#define TILE_MAP_DIM_X 16
-#define TILE_MAP_DIM_Y 9
-
     // clang-format off
-    u32 tile_map[TILE_MAP_DIM_X * TILE_MAP_DIM_Y] = {
-    1, 1, 1, 1,  1, 1, 1, 1,  0, 1, 1, 1,  1, 1, 1, 1,
-    1, 1, 0, 0,  0, 1, 0, 0,  0, 0, 0, 0,  0, 1, 0, 1,
-    1, 1, 0, 0,  0, 0, 0, 0,  1, 0, 0, 0,  0, 0, 1, 1,
-    1, 0, 0, 0,  0, 0, 0, 0,  1, 0, 0, 0,  0, 0, 0, 1,
-    0, 0, 0, 0,  0, 1, 0, 0,  1, 0, 0, 0,  0, 0, 0, 0,
-    1, 1, 0, 0,  0, 1, 0, 0,  1, 0, 0, 0,  0, 1, 0, 1,
-    1, 0, 0, 0,  0, 1, 0, 0,  1, 0, 0, 0,  1, 0, 0, 1,
-    1, 1, 1, 1,  1, 0, 0, 0,  0, 0, 0, 0,  0, 1, 0, 1,
-    1, 1, 1, 1,  1, 1, 1, 1,  0, 1, 1, 1,  1, 1, 1, 1};
+    game_tile_map_t tile_map00 = {
+        .tile_map = {
+            {1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1, 1},
+            {1, 1, 0, 0,  0, 1, 0, 0,  0, 0, 0, 0,  0, 1, 0, 0, 1},
+            {1, 1, 0, 0,  0, 0, 0, 0,  1, 0, 0, 0,  0, 0, 1, 0, 1},
+            {1, 0, 0, 0,  0, 0, 0, 0,  1, 0, 0, 0,  0, 0, 0, 0, 1},
+            {1, 0, 0, 0,  0, 1, 0, 0,  1, 0, 0, 0,  0, 0, 0, 0, 0},
+            {1, 1, 0, 0,  0, 1, 0, 0,  1, 0, 0, 0,  0, 1, 0, 0, 1},
+            {1, 0, 0, 0,  0, 1, 0, 0,  1, 0, 0, 0,  1, 0, 0, 0, 1},
+            {1, 1, 1, 1,  1, 0, 0, 0,  0, 0, 0, 0,  0, 1, 0, 0, 1},
+            {1, 1, 1, 1,  1, 1, 1, 1,  0, 1, 1, 1,  1, 1, 1, 1, 1}
+        }
+    };
 
     // clang-format on
-    u32 top_left_x = 0;
-    u32 top_left_y = 0;
+    tile_map00.top_left_x = 0.0f;
+    tile_map00.top_left_y = 0.0f;
 
-    u32 tile_width = 90;
-    u32 tile_height = 90;
+    tile_map00.tile_width = 80u;
+    tile_map00.tile_height = 80u;
 
-    const f32 player_movement_speed = game_input->delta_time * 0.001f;
+    game_state->game_world.tile_maps = (game_tile_map_t *)(&tile_map00);
+
+    game_tile_map_t *current_tile_map = &game_state->game_world.tile_maps[0];
+
+    const f32 player_movement_speed = game_input->delta_time * 0.2f;
     b32 can_player_move = true;
 
     f32 new_player_x = game_state->player_x;
@@ -191,25 +249,30 @@ __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
     game_state->y_shift++;
     game_state->x_shift++;
 
-    // Check for player and tilemap collision.
-    // Convert player coords to fb coords.
-    i32 player_tile_map_coords_x =
-        truncate_f32_to_i32((((new_player_x + 1.0f) / 2.0f) - top_left_x) *
-                            game_offscreen_buffer->width / tile_width);
-    i32 player_tile_map_coords_y =
-        truncate_f32_to_i32((((new_player_y + 1.0f) / 2.0f) - top_left_y) *
-                            game_offscreen_buffer->height / tile_height);
+    // Use the player sprite's bottom left / center / right point for collision
+    // detection.
+    f32 player_collision_check_point_x_center =
+        new_player_x + game_state->player_width / 2.0f;
 
-    if (player_tile_map_coords_x >= 0 &&
-        player_tile_map_coords_x < (i32)TILE_MAP_DIM_X &&
-        player_tile_map_coords_y >= 0 &&
-        player_tile_map_coords_y < (i32)TILE_MAP_DIM_Y)
+    f32 player_collision_check_point_x_left = new_player_x;
+
+    f32 player_collision_check_point_x_right =
+        new_player_x + game_state->player_width;
+
+    f32 player_collision_check_point_y =
+        new_player_y + game_state->player_height;
+
+    if (!(is_tile_map_point_empty(current_tile_map,
+                                  player_collision_check_point_x_center,
+                                  player_collision_check_point_y) &&
+          is_tile_map_point_empty(current_tile_map,
+                                  player_collision_check_point_x_left,
+                                  player_collision_check_point_y) &&
+          is_tile_map_point_empty(current_tile_map,
+                                  player_collision_check_point_x_right,
+                                  player_collision_check_point_y)))
     {
-        if (tile_map[player_tile_map_coords_x +
-                     player_tile_map_coords_y * TILE_MAP_DIM_X] == 1u)
-        {
-            can_player_move = false;
-        }
+        can_player_move = false;
     }
 
     // Convert player coords to tile map coords.
@@ -228,31 +291,26 @@ __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
     {
         for (u32 x = 0; x < TILE_MAP_DIM_X; x++)
         {
-            f32 tile_top_left_x = (f32)(top_left_x + (x * tile_width));
-            f32 tile_top_left_y = (f32)(top_left_y + (y * tile_height));
-
-            // Convert top left position's in range of -1 to 1.
-            const f32 buffer_space_top_left_x =
-                (tile_top_left_x / (game_offscreen_buffer->width)) * 2.0f -
-                1.0f;
-
-            const f32 buffer_space_top_left_y =
-                tile_top_left_y / (game_offscreen_buffer->height) * 2.0f - 1.0f;
+            f32 tile_top_left_x = (f32)(current_tile_map->top_left_x +
+                                        (x * current_tile_map->tile_width));
+            f32 tile_top_left_y = (f32)(current_tile_map->top_left_y +
+                                        (y * current_tile_map->tile_height));
 
             f32 color = 0.0f;
-            if (tile_map[x + y * TILE_MAP_DIM_X] == 1u)
+            if (current_tile_map->tile_map[y][x] == 1u)
             {
                 color = 1.0f;
             }
 
-            game_render_rectangle(game_offscreen_buffer,
-                                  buffer_space_top_left_x,
-                                  buffer_space_top_left_y, tile_width,
-                                  tile_height, color, color, color, 1.0f);
+            game_render_rectangle(game_offscreen_buffer, tile_top_left_x,
+                                  tile_top_left_y, current_tile_map->tile_width,
+                                  current_tile_map->tile_height, color, color,
+                                  color, 1.0f);
         }
     }
 
     // Render the player.
     game_render_rectangle(game_offscreen_buffer, game_state->player_x,
-                          game_state->player_y, 50, 50, 0.1f, 0.2f, 1.0f, 1.0f);
+                          game_state->player_y, game_state->player_width,
+                          game_state->player_height, 0.1f, 0.2f, 1.0f, 1.0f);
 }
