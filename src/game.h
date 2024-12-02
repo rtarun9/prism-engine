@@ -68,6 +68,9 @@ typedef struct
     f32 player_x;
     f32 player_y;
 
+    u32 player_tile_map_index_x;
+    u32 player_tile_map_index_y;
+
     u32 player_width;
     u32 player_height;
 
