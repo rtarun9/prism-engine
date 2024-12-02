@@ -449,13 +449,12 @@ __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
                 player_canonical_position_center.tile_map_index_y)
         {
             game_state->player_x =
-                (new_player_x - player_left_rp.x) +
+                (new_player_x - player_center_rp.x) +
                 player_canonical_position_center.tile_index_x *
                     game_state->game_world.tile_width;
 
             game_state->player_y =
-                (new_player_y - player_center_rp.y +
-                 game_state->player_height) +
+                (new_player_y - player_center_rp.y) +
                 player_canonical_position_center.tile_index_y *
                     game_state->game_world.tile_height;
         }
