@@ -5,6 +5,7 @@
 // x and y are per-tile map values.
 typedef struct
 {
+    // x and y are tile map relative.
     f32 x;
     f32 y;
 
@@ -12,8 +13,6 @@ typedef struct
     i32 tile_map_index_y;
 } game_raw_position_t;
 
-// NOTE: For now raw and canonical are pretty similar.
-// But, once total FP positions are used, this will no longer be relevant.
 typedef struct
 {
     u32 tile_index_x;
@@ -21,6 +20,9 @@ typedef struct
 
     u32 tile_map_index_x;
     u32 tile_map_index_y;
+
+    f32 tile_rel_x;
+    f32 tile_rel_y;
 } game_canonical_position_t;
 
 internal void game_render_rectangle(game_offscreen_buffer_t *const buffer,
@@ -117,6 +119,9 @@ internal game_canonical_position_t get_canonical_position_from_raw(
 
     i32 tile_index_y = truncate_f32_to_i32(
         (raw_position.y - world->top_left_y) / world->tile_height);
+
+    f32 tile_rel_x = raw_position.x - tile_index_x * world->tile_width;
+    f32 tile_rel_y = raw_position.y - tile_index_y * world->tile_height;
 
     if (tile_index_x < 0)
     {
