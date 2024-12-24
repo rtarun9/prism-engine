@@ -65,14 +65,14 @@ internal game_canonical_position_t get_canonical_position_from_raw(
 
     game_canonical_position_t result = {0};
 
-    i32 tile_index_x = truncate_f32_to_i32(
-        (raw_position.x - world->top_left_x) / world->tile_width);
+    i32 tile_index_x = floor_f32_to_i32((raw_position.x - world->top_left_x) /
+                                        world->tile_width);
 
-    i32 tile_index_y = truncate_f32_to_i32(
-        (raw_position.y - world->top_left_y) / world->tile_height);
+    i32 tile_index_y = floor_f32_to_i32((raw_position.y - world->top_left_y) /
+                                        world->tile_height);
 
-    f32 tile_rel_x = raw_position.x - (i32)tile_index_x * world->tile_width;
-    f32 tile_rel_y = raw_position.y - (i32)tile_index_y * world->tile_height;
+    f32 tile_rel_x = raw_position.x - tile_index_x * (i32)world->tile_width;
+    f32 tile_rel_y = raw_position.y - tile_index_y * (i32)world->tile_height;
 
     ASSERT(tile_rel_x < world->tile_width);
     ASSERT(tile_rel_y < world->tile_height);

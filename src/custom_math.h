@@ -69,4 +69,12 @@ inline u8 round_f32_to_u8(const f32 value)
     return result;
 }
 
+inline i32 floor_f32_to_i32(const f32 value)
+{
+    ASSERT(value <= 0x7fffffff);
+
+    i32 result = (i32)floorf(value);
+    return result;
+}
+
 #endif
