@@ -74,6 +74,12 @@ internal game_canonical_position_t get_canonical_position_from_raw(
     f32 tile_rel_x = raw_position.x - (i32)tile_index_x * world->tile_width;
     f32 tile_rel_y = raw_position.y - (i32)tile_index_y * world->tile_height;
 
+    ASSERT(tile_rel_x < world->tile_width);
+    ASSERT(tile_rel_y < world->tile_height);
+
+    ASSERT(tile_rel_x >= 0.0f);
+    ASSERT(tile_rel_y >= 0.0f);
+
     i32 tile_map_index_x = raw_position.tile_map_index_x;
     i32 tile_map_index_y = raw_position.tile_map_index_y;
 
@@ -121,21 +127,8 @@ internal game_canonical_position_t get_canonical_position_from_raw(
         tile_map_index_y = 0;
     }
 
-    if (tile_rel_x < 0)
-    {
-        tile_rel_x += world->tile_width;
-    }
-
-    if (tile_rel_y < 0)
-    {
-        tile_rel_y += world->tile_height;
-    }
-
-    ASSERT(tile_rel_x < world->tile_width);
-    ASSERT(tile_rel_y < world->tile_height);
-
-    ASSERT(tile_rel_x >= 0.0f);
-    ASSERT(tile_rel_y >= 0.0f);
+    result.tile_map_index_x = tile_map_index_x;
+    result.tile_map_index_y = tile_map_index_y;
 
     result.tile_index_x = (u32)tile_index_x;
     result.tile_index_y = (u32)tile_index_y;
