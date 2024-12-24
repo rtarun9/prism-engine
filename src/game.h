@@ -31,6 +31,7 @@ typedef struct
     f32 delta_time;
 } game_input_t;
 
+// Tile map related information.
 #define TILE_MAP_DIM_X 17u
 #define TILE_MAP_DIM_Y 9u
 
@@ -55,21 +56,34 @@ typedef struct
     u32 tile_height;
 } game_world_t;
 
+// x and y are per-tile map values.
 typedef struct
 {
-    i32 x_shift;
-    i32 y_shift;
+    // x and y are tile map relative.
+    f32 x;
+    f32 y;
 
-    f32 t_sine;
-    u32 frequency;
+    i32 tile_map_index_x;
+    i32 tile_map_index_y;
+} game_raw_position_t;
 
+typedef struct
+{
+    u32 tile_index_x;
+    u32 tile_index_y;
+
+    u32 tile_map_index_x;
+    u32 tile_map_index_y;
+
+    f32 tile_rel_x;
+    f32 tile_rel_y;
+} game_canonical_position_t;
+
+typedef struct
+{
     b32 is_initialized;
 
-    f32 player_x;
-    f32 player_y;
-
-    u32 player_tile_map_index_x;
-    u32 player_tile_map_index_y;
+    game_raw_position_t player_position;
 
     u32 player_width;
     u32 player_height;

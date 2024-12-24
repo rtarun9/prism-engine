@@ -1,9 +1,7 @@
 #ifndef __COMMON_H__
 #define __COMMON_H__
 
-#include <math.h>
 #include <stdint.h>
-#include <stdio.h>
 
 #ifdef PRISM_DEBUG
 #define ASSERT(x)                                                              \
@@ -15,6 +13,7 @@
 #define INVALID_CODE_PATH(x) ASSERT(0 && x)
 
 #else
+
 #define ASSERT(x)
 #define INVALID_CODE_PATH(x)
 #endif

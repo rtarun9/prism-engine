@@ -3,14 +3,21 @@
 #endif
 
 #include "common.h"
-
 #include "game.h"
 
+#define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
+#include <timeapi.h>
+
+#include <stdio.h>
+
+#define WINDOW_WIDTH 1920
+#define WINDOW_HEIGHT 1080
 
 // NOTE: even though bitmap info has the width and the height, because a top
-// down framebuffer is used, the height is inverted. Instead of inverting height
-// each time it is required, 2 separate fields for width and height are created.
+// down framebuffer is used, the height is inverted. Instead of inverting
+// height each time it is required, a separate field for height
+// is created.
 typedef struct
 {
     u32 *framebuffer_memory;
@@ -31,6 +38,8 @@ typedef struct
 internal win32_window_dimensions_t
 win32_get_window_client_dimensions(const HWND window)
 {
+    ASSERT(window);
+
     win32_window_dimensions_t result = {0};
 
     RECT client_rect = {0};
@@ -43,7 +52,7 @@ win32_get_window_client_dimensions(const HWND window)
 }
 
 internal void win32_render_buffer_to_window(
-    const win32_offscreen_buffer_t *buffer, const HDC device_context,
+    const win32_offscreen_buffer_t *restrict buffer, const HDC device_context,
     const u32 window_width, const u32 window_height)
 {
     ASSERT(buffer);
@@ -53,8 +62,9 @@ internal void win32_render_buffer_to_window(
                   &buffer->bitmap_info, DIB_RGB_COLORS, SRCCOPY);
 }
 
-internal void win32_resize_framebuffer(win32_offscreen_buffer_t *const buffer,
-                                       const u32 width, const u32 height)
+internal void win32_resize_framebuffer(
+    win32_offscreen_buffer_t *restrict const buffer, const u32 width,
+    const u32 height)
 {
     ASSERT(buffer);
 
@@ -274,6 +284,7 @@ void win32_unload_game_dll(game_t *game)
     if (game->game_dll)
     {
         FreeLibrary(game->game_dll);
+
         game->game_dll = NULL;
         game->update_and_render = win32_game_update_and_render_stub;
     }
@@ -461,7 +472,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
     // Create the actual window.
     const HWND window = CreateWindowExW(
         0, window_class.lpszClassName, L"prism-engine", WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, CW_USEDEFAULT, 1920, 1080, NULL, NULL, instance, NULL);
+        CW_USEDEFAULT, CW_USEDEFAULT, WINDOW_WIDTH, WINDOW_HEIGHT, NULL, NULL,
+        instance, NULL);
     ShowWindow(window, SW_SHOWNORMAL);
 
     if (!window)
@@ -472,9 +484,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
 
     const HDC device_context = GetDC(window);
 
-    win32_resize_framebuffer(&g_backbuffer, 1080, 720);
-
-    b32 quit = false;
+    win32_resize_framebuffer(&g_backbuffer, WINDOW_WIDTH, WINDOW_HEIGHT);
 
     // Get the number of counts that occur in a second.
     u64 perf_counter_frequency = win32_get_perf_counter_frequency();
@@ -496,8 +506,15 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
     f32 delta_time = 0.0f;
 
     // Code to limit framerate.
-    const u32 monitor_refresh_rate = 60;
-    const u32 game_update_hz = monitor_refresh_rate / 2;
+    u32 monitor_refresh_rate = 60;
+
+    DEVMODEA dev_mode = {};
+    if (EnumDisplaySettingsA(NULL, ENUM_CURRENT_SETTINGS, &dev_mode))
+    {
+        monitor_refresh_rate = dev_mode.dmDisplayFrequency;
+    }
+
+    const u32 game_update_hz = monitor_refresh_rate;
     const u32 target_ms_per_frame = (u32)(1000.0f / (f32)game_update_hz);
 
     // Get the current value of performance counter.
@@ -505,11 +522,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev_instance,
     // dividing with perf_counter_frequency, we can find how long it took
     // (in seconds) to render this frame.
     u64 last_counter_value = win32_get_perf_counter_value();
-
     u64 last_timestamp_value = __rdtsc();
 
     u32 frame_index = 0;
 
+    b32 quit = false;
     while (!quit)
     {
         // Check if the game dll's last write time has changed. If yes, re-load

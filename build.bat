@@ -12,15 +12,16 @@ pushd build
 :: Zi : used to create .pdb that contains information useful for debugging.
 :: Od : to disable optimizations (in debug mode)
 :: fp:precise : Precise floating point model, with predictable results.
-:: Fe : Specify name of executable.
 :: D : Defines macros.
 :: FC : Displays the full path of source code files passed to cl.exe in diagnostic text.
 
 set common_macros=/DPRISM_DEBUG
 
 set win32_compiler_flags=%common_macros%
-set win32_compiler_flags=%win32_compiler_flags% /Z7
+::NOTE: Remove  /Od when release build is being created.
+:: This is present for testing purposes only.
 set win32_compiler_flags=%win32_compiler_flags% /Od
+set win32_compiler_flags=%win32_compiler_flags% /Zi
 set win32_compiler_flags=%win32_compiler_flags% /fp:precise
 set win32_compiler_flags=%win32_compiler_flags% /FC
 
@@ -60,9 +61,11 @@ set win32_linker_flags=%win32_linker_flags% Winmm.lib
 :: PDB : Creates a PDB using user specified name.
 :: DEBUG : Tells the linker to create a PDB (program database) that holds debugging information.
 
+:: Fe : Specify name of executable.
+
 :: TODO: How should the pdb and raddgb files be deleted.
-::del *.pdb
-::del *.raddbg
+del *.pdb
+del *.raddbg
 
 set game_linker_flags=/DEBUG:FULL
 set game_linker_flags=%game_linker_flags% /PDB:game_pdb_%RANDOM%.pdb
