@@ -202,7 +202,7 @@ __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
 
     if (!game_state->is_initialized)
     {
-        game_state->pixels_to_meters = 100;
+        game_state->pixels_per_meter = 100;
 
         // The position of player bottom center.
         game_canonical_position_t player_pos = {};
@@ -213,14 +213,14 @@ __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
 
         game_state->player_position = player_pos;
 
-        game_state->player_width = (u32)(game_state->pixels_to_meters * 0.65f);
-        game_state->player_height = game_state->pixels_to_meters * 1;
+        game_state->player_width = 0.65f;
+        game_state->player_height = 1;
 
         game_state->game_world.top_left_x = 0.0f;
         game_state->game_world.top_left_y = 0.0f;
 
-        game_state->game_world.tile_width = game_state->pixels_to_meters;
-        game_state->game_world.tile_height = game_state->pixels_to_meters;
+        game_state->game_world.tile_width = 1u;
+        game_state->game_world.tile_height = 1u;
 
         game_state->game_world.tile_map_count_x = 2;
         game_state->game_world.tile_map_count_y = 2;
@@ -295,7 +295,9 @@ __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
                                     tile_map11};
     game_state->game_world.tile_maps = (game_tile_map_t *)(tile_maps);
 
-    const f32 player_movement_speed = game_input->delta_time * 0.5f;
+    // delta time in ms per frame.
+    // Player movement speed is in meters per second.
+    const f32 player_movement_speed = game_input->delta_time * 10.0f / 1000.0f;
 
     f32 new_player_x = game_state->player_position.tile_rel_x;
     f32 new_player_y = game_state->player_position.tile_rel_y;
@@ -382,12 +384,13 @@ __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
     {
         for (u32 x = 0; x < TILE_MAP_DIM_X; x++)
         {
-            f32 tile_top_left_x =
-                (f32)(game_state->game_world.top_left_x +
-                      (x * game_state->game_world.tile_width));
+            f32 tile_top_left_x = (f32)(game_state->game_world.top_left_x +
+                                        (x * game_state->game_world.tile_width *
+                                         game_state->pixels_per_meter));
             f32 tile_top_left_y =
                 (f32)(game_state->game_world.top_left_y +
-                      (y * game_state->game_world.tile_height));
+                      (y * game_state->game_world.tile_height *
+                       game_state->pixels_per_meter));
 
             f32 color = 0.0f;
             if (current_tile_map->tile_map[y][x] == 1u)
@@ -395,25 +398,41 @@ __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
                 color = 1.0f;
             }
 
-            game_render_rectangle(
-                game_offscreen_buffer, tile_top_left_x, tile_top_left_y,
-                game_state->game_world.tile_width,
-                game_state->game_world.tile_height, color, color, color, 1.0f);
+            // Higher player current tile position.
+            if (y == game_state->player_position.tile_index_y &&
+                x == game_state->player_position.tile_index_x)
+            {
+                color = 0.5f;
+            }
+
+            game_render_rectangle(game_offscreen_buffer, tile_top_left_x,
+                                  tile_top_left_y,
+                                  game_state->game_world.tile_width *
+                                      game_state->pixels_per_meter,
+                                  game_state->game_world.tile_height *
+                                      game_state->pixels_per_meter,
+                                  color, color, color, 1.0f);
         }
     }
 
-    f32 top_left_x = game_state->player_position.tile_rel_x +
-                     game_state->player_position.tile_index_x *
-                         game_state->game_world.tile_width -
-                     game_state->player_width / 2.0f;
+    f32 top_left_x = game_state->pixels_per_meter *
+                     (game_state->player_position.tile_rel_x *
+                          game_state->game_world.tile_width +
+                      game_state->player_position.tile_index_x *
+                          game_state->game_world.tile_width -
+                      game_state->player_width / 2.0f);
 
-    f32 top_left_y = game_state->player_position.tile_rel_y +
-                     game_state->player_position.tile_index_y *
-                         game_state->game_world.tile_height -
-                     game_state->player_height;
+    f32 top_left_y = game_state->pixels_per_meter *
+                     (game_state->player_position.tile_rel_y *
+                          game_state->game_world.tile_height +
+                      game_state->player_position.tile_index_y *
+                          game_state->game_world.tile_height -
+                      game_state->player_height);
 
     // Render the player.
-    game_render_rectangle(game_offscreen_buffer, top_left_x, top_left_y,
-                          game_state->player_width, game_state->player_height,
-                          0.1f, 0.2f, 1.0f, 1.0f);
+    game_render_rectangle(
+        game_offscreen_buffer, top_left_x, top_left_y,
+        (u32)(game_state->player_width * game_state->pixels_per_meter),
+        (u32)(game_state->player_height * game_state->pixels_per_meter), 0.1f,
+        0.2f, 1.0f, 1.0f);
 }

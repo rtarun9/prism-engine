@@ -52,6 +52,7 @@ typedef struct
     f32 top_left_x;
     f32 top_left_y;
 
+    // Tile width and height are in meters.
     u32 tile_width;
     u32 tile_height;
 } game_world_t;
@@ -74,11 +75,12 @@ typedef struct
 
     game_canonical_position_t player_position;
 
-    u32 player_width;
-    u32 player_height;
+    // Player dimensions in meters.
+    f32 player_width;
+    f32 player_height;
 
     // The number of pixels that makes up a meter.
-    u32 pixels_to_meters;
+    u32 pixels_per_meter;
 
     game_world_t game_world;
 } game_state_t;
