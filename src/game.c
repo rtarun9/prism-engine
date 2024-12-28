@@ -58,83 +58,68 @@ internal void game_render_rectangle(
     }
 }
 
-internal game_canonical_position_t get_canonical_position_from_raw(
-    game_world_t *const restrict world, game_raw_position_t raw_position)
+// Adjust value of tile index and tile map index if tile rel x goes
+// over the tile dimension.
+// Adjust values of tile index / tile map index / tile rel inplace.
+internal void recanonicalize_coordinate(u32 *tile_index, u32 *tile_map_index,
+                                        f32 *tile_rel, u32 tile_dim,
+                                        u32 tile_count, u32 tile_map_count)
+{
+    ASSERT(tile_index);
+    ASSERT(tile_map_index);
+    ASSERT(tile_rel);
+
+    i32 delta = floor_f32_to_i32(*tile_rel / tile_dim);
+
+    i32 result_tile_index = (i32)*tile_index;
+    i32 result_tile_map_index = (i32)*tile_map_index;
+
+    result_tile_index += delta;
+
+    *tile_rel = *tile_rel - delta * (i32)tile_dim;
+
+    ASSERT(*tile_rel < tile_dim);
+    ASSERT(*tile_rel >= 0.0f);
+
+    if (result_tile_index < 0)
+    {
+        result_tile_index += tile_count;
+        result_tile_map_index--;
+    }
+
+    if (result_tile_index >= (i32)tile_count)
+    {
+        result_tile_index -= (i32)tile_count;
+        result_tile_map_index++;
+    }
+
+    if (result_tile_map_index < 0)
+    {
+        result_tile_map_index = (i32)tile_map_count - 1;
+    }
+
+    if (result_tile_map_index >= (i32)tile_map_count)
+    {
+        result_tile_map_index = 0;
+    }
+
+    *tile_map_index = result_tile_map_index;
+    *tile_index = result_tile_index;
+}
+
+internal game_canonical_position_t recanonicalize_position(
+    game_world_t *const restrict world, game_canonical_position_t position)
 {
     ASSERT(world);
 
-    game_canonical_position_t result = {0};
+    game_canonical_position_t result = position;
 
-    i32 tile_index_x = floor_f32_to_i32((raw_position.x - world->top_left_x) /
-                                        world->tile_width);
-
-    i32 tile_index_y = floor_f32_to_i32((raw_position.y - world->top_left_y) /
-                                        world->tile_height);
-
-    f32 tile_rel_x = raw_position.x - tile_index_x * (i32)world->tile_width;
-    f32 tile_rel_y = raw_position.y - tile_index_y * (i32)world->tile_height;
-
-    ASSERT(tile_rel_x < world->tile_width);
-    ASSERT(tile_rel_y < world->tile_height);
-
-    ASSERT(tile_rel_x >= 0.0f);
-    ASSERT(tile_rel_y >= 0.0f);
-
-    i32 tile_map_index_x = raw_position.tile_map_index_x;
-    i32 tile_map_index_y = raw_position.tile_map_index_y;
-
-    if (tile_index_x < 0)
-    {
-        tile_index_x += TILE_MAP_DIM_X;
-        tile_map_index_x--;
-    }
-
-    if (tile_index_x >= TILE_MAP_DIM_X)
-    {
-        tile_index_x -= TILE_MAP_DIM_X;
-        tile_map_index_x++;
-    }
-
-    if (tile_index_y < 0)
-    {
-        tile_index_y += TILE_MAP_DIM_Y;
-        tile_map_index_y--;
-    }
-
-    if (tile_index_y >= TILE_MAP_DIM_Y)
-    {
-        tile_index_y -= TILE_MAP_DIM_Y;
-        tile_map_index_y++;
-    }
-
-    if (tile_map_index_x < 0)
-    {
-        tile_map_index_x = world->tile_map_count_x - 1;
-    }
-
-    if (tile_map_index_x >= (i32)world->tile_map_count_x)
-    {
-        tile_map_index_x = 0;
-    }
-
-    if (tile_map_index_y < 0)
-    {
-        tile_map_index_y = world->tile_map_count_y - 1;
-    }
-
-    if (tile_map_index_y >= (i32)world->tile_map_count_y)
-    {
-        tile_map_index_y = 0;
-    }
-
-    result.tile_map_index_x = tile_map_index_x;
-    result.tile_map_index_y = tile_map_index_y;
-
-    result.tile_index_x = (u32)tile_index_x;
-    result.tile_index_y = (u32)tile_index_y;
-
-    result.tile_rel_x = tile_rel_x;
-    result.tile_rel_y = tile_rel_y;
+    recanonicalize_coordinate(&result.tile_index_x, &result.tile_map_index_x,
+                              &result.tile_rel_x, world->tile_width,
+                              TILE_MAP_DIM_X, world->tile_map_count_x);
+    recanonicalize_coordinate(&result.tile_index_y, &result.tile_map_index_y,
+                              &result.tile_rel_y, world->tile_height,
+                              TILE_MAP_DIM_Y, world->tile_map_count_y);
 
     return result;
 }
@@ -217,22 +202,25 @@ __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
 
     if (!game_state->is_initialized)
     {
-        game_raw_position_t player_pos = {};
-        player_pos.x = 100.0f;
-        player_pos.y = 150.0f;
+        game_state->pixels_to_meters = 100;
+
+        // The position of player bottom center.
+        game_canonical_position_t player_pos = {};
         player_pos.tile_map_index_x = 0;
         player_pos.tile_map_index_y = 0;
+        player_pos.tile_index_x = 3;
+        player_pos.tile_index_y = 3;
 
         game_state->player_position = player_pos;
 
-        game_state->player_width = 30u;
-        game_state->player_height = 50u;
+        game_state->player_width = (u32)(game_state->pixels_to_meters * 0.65f);
+        game_state->player_height = game_state->pixels_to_meters * 1;
 
         game_state->game_world.top_left_x = 0.0f;
         game_state->game_world.top_left_y = 0.0f;
 
-        game_state->game_world.tile_width = 50u;
-        game_state->game_world.tile_height = 50u;
+        game_state->game_world.tile_width = game_state->pixels_to_meters;
+        game_state->game_world.tile_height = game_state->pixels_to_meters;
 
         game_state->game_world.tile_map_count_x = 2;
         game_state->game_world.tile_map_count_y = 2;
@@ -309,8 +297,8 @@ __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
 
     const f32 player_movement_speed = game_input->delta_time * 0.5f;
 
-    f32 new_player_x = game_state->player_position.x;
-    f32 new_player_y = game_state->player_position.y;
+    f32 new_player_x = game_state->player_position.tile_rel_x;
+    f32 new_player_y = game_state->player_position.tile_rel_y;
 
     if (game_input->keyboard_state.key_w.is_key_down)
     {
@@ -342,38 +330,29 @@ __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
     f32 player_collision_check_point_x_left =
         new_player_x - game_state->player_width / 2.0f;
 
-    f32 player_collision_check_point_y =
-        new_player_y + game_state->player_height;
+    f32 player_collision_check_point_y = new_player_y;
 
-    game_raw_position_t player_center_rp = {0};
-    player_center_rp.tile_map_index_x =
-        game_state->player_position.tile_map_index_x;
+    game_canonical_position_t player_center_rp = game_state->player_position;
 
-    player_center_rp.tile_map_index_y =
-        game_state->player_position.tile_map_index_y;
+    player_center_rp.tile_rel_x = player_collision_check_point_x_center;
+    player_center_rp.tile_rel_y = player_collision_check_point_y;
 
-    player_center_rp.x = player_collision_check_point_x_center;
-    player_center_rp.y = player_collision_check_point_y;
+    game_canonical_position_t player_left_rp = game_state->player_position;
+    player_left_rp.tile_rel_x = player_collision_check_point_x_left;
+    player_left_rp.tile_rel_y = player_collision_check_point_y;
 
-    game_raw_position_t player_left_rp = player_center_rp;
-    player_left_rp.x = player_collision_check_point_x_left;
-    player_left_rp.y = player_collision_check_point_y;
-
-    game_raw_position_t player_right_rp = player_center_rp;
-    player_right_rp.x = player_collision_check_point_x_right;
-    player_right_rp.y = player_collision_check_point_y;
+    game_canonical_position_t player_right_rp = game_state->player_position;
+    player_right_rp.tile_rel_x = player_collision_check_point_x_right;
+    player_right_rp.tile_rel_y = player_collision_check_point_y;
 
     game_canonical_position_t player_canonical_position_center =
-        get_canonical_position_from_raw(&game_state->game_world,
-                                        player_center_rp);
+        recanonicalize_position(&game_state->game_world, player_center_rp);
 
     game_canonical_position_t player_canonical_position_left =
-        get_canonical_position_from_raw(&game_state->game_world,
-                                        player_left_rp);
+        recanonicalize_position(&game_state->game_world, player_left_rp);
 
     game_canonical_position_t player_canonical_position_right =
-        get_canonical_position_from_raw(&game_state->game_world,
-                                        player_right_rp);
+        recanonicalize_position(&game_state->game_world, player_right_rp);
 
     b32 can_player_move = true;
     if (!(is_tile_map_point_empty_in_world(&game_state->game_world,
@@ -389,22 +368,7 @@ __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
     // Convert player coords to tile map coords.
     if (can_player_move)
     {
-        game_state->player_position.tile_map_index_x =
-            player_canonical_position_center.tile_map_index_x;
-
-        game_state->player_position.tile_map_index_y =
-            player_canonical_position_center.tile_map_index_y;
-
-        game_state->player_position.x =
-            player_canonical_position_center.tile_index_x *
-                game_state->game_world.tile_width +
-            player_canonical_position_center.tile_rel_x;
-
-        game_state->player_position.y =
-            player_canonical_position_center.tile_index_y *
-                game_state->game_world.tile_height +
-            player_canonical_position_center.tile_rel_y -
-            game_state->player_height;
+        game_state->player_position = player_canonical_position_center;
     }
 
     // Basic tile map rendering.
@@ -438,10 +402,18 @@ __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
         }
     }
 
+    f32 top_left_x = game_state->player_position.tile_rel_x +
+                     game_state->player_position.tile_index_x *
+                         game_state->game_world.tile_width -
+                     game_state->player_width / 2.0f;
+
+    f32 top_left_y = game_state->player_position.tile_rel_y +
+                     game_state->player_position.tile_index_y *
+                         game_state->game_world.tile_height -
+                     game_state->player_height;
+
     // Render the player.
-    game_render_rectangle(
-        game_offscreen_buffer,
-        game_state->player_position.x - game_state->player_width / 2.0f,
-        game_state->player_position.y, game_state->player_width,
-        game_state->player_height, 0.1f, 0.2f, 1.0f, 1.0f);
+    game_render_rectangle(game_offscreen_buffer, top_left_x, top_left_y,
+                          game_state->player_width, game_state->player_height,
+                          0.1f, 0.2f, 1.0f, 1.0f);
 }

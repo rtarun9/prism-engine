@@ -56,17 +56,6 @@ typedef struct
     u32 tile_height;
 } game_world_t;
 
-// x and y are per-tile map values.
-typedef struct
-{
-    // x and y are tile map relative.
-    f32 x;
-    f32 y;
-
-    i32 tile_map_index_x;
-    i32 tile_map_index_y;
-} game_raw_position_t;
-
 typedef struct
 {
     u32 tile_index_x;
@@ -83,10 +72,13 @@ typedef struct
 {
     b32 is_initialized;
 
-    game_raw_position_t player_position;
+    game_canonical_position_t player_position;
 
     u32 player_width;
     u32 player_height;
+
+    // The number of pixels that makes up a meter.
+    u32 pixels_to_meters;
 
     game_world_t game_world;
 } game_state_t;
