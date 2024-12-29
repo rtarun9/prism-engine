@@ -80,7 +80,8 @@ typedef struct
     f32 player_height;
 
     // The number of pixels that makes up a meter.
-    u32 pixels_per_meter;
+    // TODO: Make this u32 again!
+    i32 pixels_per_meter;
 
     game_world_t game_world;
 

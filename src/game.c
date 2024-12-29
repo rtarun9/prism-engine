@@ -159,12 +159,13 @@ internal game_tile_chunk_t *get_tile_chunk_from_world(
 internal u32 get_tile_chunk_value(game_tile_chunk_t *const restrict tile_chunk,
                                   const u32 tile_index_x, u32 tile_index_y)
 {
-    ASSERT(tile_chunk);
-
-    if (tile_index_x < (i32)TILE_CHUNK_DIM_X &&
-        tile_index_y < (i32)TILE_CHUNK_DIM_Y)
+    if (tile_chunk)
     {
-        return tile_chunk->tiles[tile_index_y][tile_index_x];
+        if (tile_index_x < (i32)TILE_CHUNK_DIM_X &&
+            tile_index_y < (i32)TILE_CHUNK_DIM_Y)
+        {
+            return tile_chunk->tiles[tile_index_y][tile_index_x];
+        }
     }
 
     return INVALID_TILE_VALUE;
@@ -188,9 +189,13 @@ internal b32
 is_tile_chunk_point_empty(game_tile_chunk_t *const restrict tile_chunk,
                           const u32 tile_index_x, const u32 tile_index_y)
 {
-    ASSERT(tile_chunk);
+    if (tile_chunk)
+    {
+        return get_tile_chunk_value(tile_chunk, tile_index_x, tile_index_y) ==
+               0;
+    }
 
-    return get_tile_chunk_value(tile_chunk, tile_index_x, tile_index_y) == 0;
+    return false;
 }
 
 internal u32 get_tile_value_in_world(game_world_t *const restrict world,
@@ -236,8 +241,8 @@ __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
 
         // The position of player bottom center.
         game_world_position_t player_pos = {};
-        player_pos.abs_tile_index_x = 3;
-        player_pos.abs_tile_index_y = 3;
+        player_pos.abs_tile_index_x = 2;
+        player_pos.abs_tile_index_y = 2;
 
         game_state->player_position = player_pos;
 
@@ -375,7 +380,6 @@ __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
         game_state->player_position = player_world_position_center;
     }
 
-    // Render the tiles in world that are viewable from current view.
     // NOTE: Player is always rendered right at the center of screen.
     const f32 center_x = game_offscreen_buffer->width / 2.0f;
     const f32 center_y = game_offscreen_buffer->height / 2.0f;
@@ -384,28 +388,8 @@ __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
     {
         for (i32 x = -19; x < 19; x++)
         {
-            const u32 tile_x = game_state->player_position.abs_tile_index_x - x;
-            const u32 tile_y = game_state->player_position.abs_tile_index_y - y;
-
-            // NOTE: These are in framebuffer coords (top left corner is
-            // origin).
-            f32 fb_tile_left_x =
-                (f32)(game_state->game_world.bottom_left_x +
-                      (tile_x * game_state->game_world.tile_width *
-                       game_state->pixels_per_meter));
-
-            f32 fb_tile_right_x =
-                fb_tile_left_x + (game_state->pixels_per_meter *
-                                  game_state->game_world.tile_width);
-
-            f32 fb_tile_bottom_y =
-                (f32)(game_state->game_world.bottom_left_y -
-                      ((tile_y)*game_state->game_world.tile_height *
-                       game_state->pixels_per_meter));
-
-            f32 fb_tile_top_y =
-                fb_tile_bottom_y - (game_state->pixels_per_meter *
-                                    game_state->game_world.tile_height);
+            i32 tile_x = x + (i32)game_state->player_position.abs_tile_index_x;
+            i32 tile_y = y + (i32)game_state->player_position.abs_tile_index_y;
 
             f32 color = 0.0f;
 
@@ -416,22 +400,40 @@ __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
             u32 current_tile_value = get_tile_value_in_world(
                 &game_state->game_world, render_tile_chunk_position);
 
+            if (current_tile_value == INVALID_TILE_VALUE)
+            {
+                continue;
+            }
+
             if (current_tile_value == 1)
             {
                 color = 1.0f;
             }
 
-            if (current_tile_value == INVALID_TILE_VALUE)
-            {
-                color = 0.1f;
-            }
-
             // Higher player current tile position.
-            if (tile_y == game_state->player_position.abs_tile_index_y &&
-                tile_x == game_state->player_position.abs_tile_index_x)
+            if (x == 0 && y == 0)
             {
                 color = 0.5f;
             }
+
+            // NOTE: These are in framebuffer coords (top left corner is
+            // origin).
+            f32 fb_tile_left_x =
+                (f32)(center_x + (x * (i32)game_state->game_world.tile_width *
+                                  game_state->pixels_per_meter));
+
+            f32 fb_tile_right_x =
+                fb_tile_left_x + (game_state->pixels_per_meter *
+                                  (i32)game_state->game_world.tile_width);
+
+            f32 fb_tile_bottom_y =
+                (f32)(center_y -
+                      ((y) * (i32)game_state->game_world.tile_height *
+                       game_state->pixels_per_meter));
+
+            f32 fb_tile_top_y =
+                fb_tile_bottom_y - (game_state->pixels_per_meter *
+                                    game_state->game_world.tile_height);
 
             game_render_rectangle(game_offscreen_buffer, fb_tile_left_x,
                                   fb_tile_top_y, fb_tile_right_x,
