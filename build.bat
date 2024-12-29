@@ -63,7 +63,6 @@ set win32_linker_flags=%win32_linker_flags% Winmm.lib
 
 :: Fe : Specify name of executable.
 
-:: TODO: How should the pdb and raddgb files be deleted.
 del *.pdb
 del *.raddbg
 

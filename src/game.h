@@ -67,13 +67,13 @@ typedef struct
 
     f32 tile_rel_x;
     f32 tile_rel_y;
-} game_canonical_position_t;
+} game_world_position_t;
 
 typedef struct
 {
     b32 is_initialized;
 
-    game_canonical_position_t player_position;
+    game_world_position_t player_position;
 
     // Player dimensions in meters.
     f32 player_width;

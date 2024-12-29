@@ -63,9 +63,9 @@ internal void game_render_rectangle(
 // Adjust value of tile index and tile map index if tile rel x goes
 // over the tile dimension.
 // Adjust values of tile index / tile map index / tile rel inplace.
-internal void recanonicalize_coordinate(u32 *tile_index, u32 *tile_map_index,
-                                        f32 *tile_rel, u32 tile_dim,
-                                        u32 tile_count, u32 tile_map_count)
+internal void readjust_coordinate(u32 *tile_index, u32 *tile_map_index,
+                                  f32 *tile_rel, u32 tile_dim, u32 tile_count,
+                                  u32 tile_map_count)
 {
     ASSERT(tile_index);
     ASSERT(tile_map_index);
@@ -109,19 +109,19 @@ internal void recanonicalize_coordinate(u32 *tile_index, u32 *tile_map_index,
     *tile_index = result_tile_index;
 }
 
-internal game_canonical_position_t recanonicalize_position(
-    game_world_t *const restrict world, game_canonical_position_t position)
+internal game_world_position_t readjust_position(
+    game_world_t *const restrict world, game_world_position_t position)
 {
     ASSERT(world);
 
-    game_canonical_position_t result = position;
+    game_world_position_t result = position;
 
-    recanonicalize_coordinate(&result.tile_index_x, &result.tile_map_index_x,
-                              &result.tile_rel_x, world->tile_width,
-                              TILE_MAP_DIM_X, world->tile_map_count_x);
-    recanonicalize_coordinate(&result.tile_index_y, &result.tile_map_index_y,
-                              &result.tile_rel_y, world->tile_height,
-                              TILE_MAP_DIM_Y, world->tile_map_count_y);
+    readjust_coordinate(&result.tile_index_x, &result.tile_map_index_x,
+                        &result.tile_rel_x, world->tile_width, TILE_MAP_DIM_X,
+                        world->tile_map_count_x);
+    readjust_coordinate(&result.tile_index_y, &result.tile_map_index_y,
+                        &result.tile_rel_y, world->tile_height, TILE_MAP_DIM_Y,
+                        world->tile_map_count_y);
 
     return result;
 }
@@ -156,9 +156,8 @@ internal u32 get_tile_map_value(game_tile_map_t *const restrict tile_map,
     return INVALID_TILE_MAP_VALUE;
 }
 
-internal u32
-get_tile_map_value_in_world(game_world_t *const restrict world,
-                            const game_canonical_position_t position)
+internal u32 get_tile_map_value_in_world(game_world_t *const restrict world,
+                                         const game_world_position_t position)
 
 {
     game_tile_map_t *tile_map = get_tile_map_from_world(
@@ -179,9 +178,8 @@ internal b32 is_tile_map_point_empty(game_tile_map_t *const restrict tile_map,
     return get_tile_map_value(tile_map, tile_index_x, tile_index_y) == 0;
 }
 
-internal b32
-is_tile_map_point_empty_in_world(game_world_t *const restrict world,
-                                 const game_canonical_position_t position)
+internal b32 is_tile_map_point_empty_in_world(
+    game_world_t *const restrict world, const game_world_position_t position)
 
 {
     // Convert x and y first into tile map coords.
@@ -207,7 +205,7 @@ __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
         game_state->pixels_per_meter = 100;
 
         // The position of player bottom center.
-        game_canonical_position_t player_pos = {};
+        game_world_position_t player_pos = {};
         player_pos.tile_map_index_x = 0;
         player_pos.tile_map_index_y = 0;
         player_pos.tile_index_x = 3;
@@ -221,7 +219,7 @@ __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
         game_state->game_world.tile_width = 1u;
         game_state->game_world.tile_height = 1u;
 
-        game_state->game_world.bottom_left_x = 0.0f;
+        game_state->game_world.bottom_left_x = 50.0f;
         game_state->game_world.bottom_left_y =
             (f32)game_offscreen_buffer->height -
             game_state->game_world.tile_height * game_state->pixels_per_meter;
@@ -237,14 +235,14 @@ __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
     // This means that the tiles in the tile map prefab are flipped.
     game_tile_map_t tile_map00 = {
         .tile_map = {
-            {1, 1, 1, 1,  1, 1, 1, 1,  0, 1, 1, 1,  1, 1, 1, 1, 1},
-            {1, 1, 1, 1,  1, 0, 0, 0,  0, 0, 0, 0,  0, 1, 0, 0, 1},
-            {1, 1, 1, 1,  0, 0, 0, 0,  1, 0, 0, 0,  0, 0, 0, 0, 1},
-            {1, 0, 0, 0,  0, 1, 0, 0,  1, 0, 0, 0,  0, 0, 1, 0, 1},
-            {0, 0, 0, 0,  0, 1, 0, 0,  0, 0, 0, 0,  0, 1, 0, 0, 0},
-            {1, 0, 0, 0,  0, 0, 0, 0,  1, 0, 0, 0,  0, 0, 0, 0, 1},
-            {1, 1, 0, 0,  0, 0, 0, 0,  1, 0, 0, 0,  0, 0, 0, 0, 1},
-            {1, 1, 0, 0,  0, 1, 0, 0,  0, 0, 0, 0,  0, 1, 0, 0, 1},
+            {1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1, 1},
+            {1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1},
+            {1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1},
+            {1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1},
+            {1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 0},
+            {1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1},
+            {1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1},
+            {1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1},
             {1, 1, 1, 1,  1, 1, 1, 1,  0, 1, 1, 1,  1, 1, 1, 1, 1}
 
         }
@@ -252,29 +250,29 @@ __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
 
     game_tile_map_t tile_map01 = {
         .tile_map = {
-            {1, 1, 1, 1,  1, 1, 1, 1,  0, 1, 1, 1,  1, 1, 1, 1, 1},
-            {1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 1, 0, 0, 1},
-            {1, 0, 0, 0,  0, 0, 0, 0,  1, 0, 0, 0,  1, 0, 0, 0, 1},
-            {1, 0, 0, 0,  0, 0, 0, 0,  1, 0, 0, 0,  0, 1, 0, 0, 1},
-            {0, 0, 0, 0,  0, 0, 0, 0,  1, 0, 0, 0,  0, 0, 0, 0, 0},
-            {1, 0, 0, 0,  0, 0, 0, 0,  1, 0, 0, 0,  0, 0, 1, 0, 0},
-            {1, 0, 0, 0,  0, 0, 0, 0,  1, 0, 0, 0,  0, 0, 1, 0, 1},
+            {1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1, 1},
             {1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1},
-            {1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1, 1}
+            {1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1},
+            {1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1},
+            {0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1},
+            {1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1},
+            {1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1},
+            {1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1},
+            {1, 1, 1, 1,  1, 1, 1, 1,  0, 1, 1, 1,  1, 1, 1, 1, 1}
         }
     };
 
     game_tile_map_t tile_map10 = {
         .tile_map = {
             {1, 1, 1, 1,  1, 1, 1, 1,  0, 1, 1, 1,  1, 1, 1, 1, 1},
-            {1, 1, 1, 1,  1, 0, 0, 0,  0, 1, 0, 0,  0, 1, 1, 0, 1},
-            {1, 0, 0, 0,  0, 1, 0, 0,  1, 1, 0, 0,  1, 1, 1, 0, 1},
-            {1, 1, 0, 0,  0, 1, 0, 0,  1, 1, 0, 0,  0, 1, 1, 0, 1},
-            {1, 0, 0, 0,  0, 1, 0, 0,  1, 1, 0, 0,  0, 1, 1, 0, 0},
-            {1, 0, 0, 0,  0, 1, 0, 0,  1, 1, 0, 0,  0, 1, 1, 0, 1},
-            {1, 0, 0, 0,  0, 1, 0, 0,  1, 1, 0, 0,  0, 1, 1, 0, 0},
-            {1, 0, 0, 0,  0, 1, 0, 0,  1, 1, 0, 0,  0, 1, 1, 0, 1},
-            {1, 1, 0, 0,  0, 1, 0, 0,  1, 1, 0, 0,  0, 0, 1, 0, 1}
+            {1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1},
+            {1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1},
+            {1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1},
+            {1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 0},
+            {1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1},
+            {1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1},
+            {1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1},
+            {1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1, 1}
 
         }
     };
@@ -282,14 +280,14 @@ __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
     game_tile_map_t tile_map11 = {
         .tile_map = {
             {1, 1, 1, 1,  1, 1, 1, 1,  0, 1, 1, 1,  1, 1, 1, 1, 1},
-            {1, 1, 1, 1,  1, 1, 1, 1,  0, 1, 1, 1,  1, 1, 1, 1, 1},
-            {1, 1, 1, 1,  1, 0, 0, 0,  0, 0, 0, 0,  0, 1, 0, 0, 1},
-            {1, 1, 1, 1,  1, 0, 0, 0,  0, 0, 0, 0,  0, 1, 0, 0, 0},
-            {1, 0, 0, 0,  0, 1, 0, 0,  1, 0, 0, 0,  0, 0, 0, 0, 0},
-            {0, 0, 0, 0,  0, 1, 0, 0,  1, 0, 0, 0,  0, 0, 0, 0, 0},
-            {1, 0, 0, 0,  0, 0, 0, 0,  1, 0, 0, 0,  0, 0, 0, 0, 1},
-            {1, 1, 0, 0,  0, 0, 0, 0,  1, 0, 0, 0,  0, 1, 0, 0, 1},
-            {1, 1, 0, 0,  0, 1, 0, 0,  1, 1, 0, 0,  0, 1, 1, 0, 1}
+            {1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1},
+            {1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1},
+            {1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1},
+            {0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1},
+            {1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1},
+            {1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1},
+            {1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1},
+            {1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1, 1}
         }
     };
     // clang-format on
@@ -305,7 +303,7 @@ __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
 
     // delta time in ms per frame.
     // Player movement speed is in meters per second.
-    const f32 player_movement_speed = game_input->delta_time * 10.0f / 1000.0f;
+    const f32 player_movement_speed = game_input->delta_time * 12.0f / 1000.0f;
 
     // NOTE: Player & world coords are such that y increases up, x increases
     // right (normal math coord system).
@@ -344,35 +342,35 @@ __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
 
     f32 player_collision_check_point_y = new_player_y;
 
-    game_canonical_position_t player_center_rp = game_state->player_position;
+    game_world_position_t player_center_rp = game_state->player_position;
 
     player_center_rp.tile_rel_x = player_collision_check_point_x_center;
     player_center_rp.tile_rel_y = player_collision_check_point_y;
 
-    game_canonical_position_t player_left_rp = game_state->player_position;
+    game_world_position_t player_left_rp = game_state->player_position;
     player_left_rp.tile_rel_x = player_collision_check_point_x_left;
     player_left_rp.tile_rel_y = player_collision_check_point_y;
 
-    game_canonical_position_t player_right_rp = game_state->player_position;
+    game_world_position_t player_right_rp = game_state->player_position;
     player_right_rp.tile_rel_x = player_collision_check_point_x_right;
     player_right_rp.tile_rel_y = player_collision_check_point_y;
 
-    game_canonical_position_t player_canonical_position_center =
-        recanonicalize_position(&game_state->game_world, player_center_rp);
+    game_world_position_t player_world_position_center =
+        readjust_position(&game_state->game_world, player_center_rp);
 
-    game_canonical_position_t player_canonical_position_left =
-        recanonicalize_position(&game_state->game_world, player_left_rp);
+    game_world_position_t player_world_position_left =
+        readjust_position(&game_state->game_world, player_left_rp);
 
-    game_canonical_position_t player_canonical_position_right =
-        recanonicalize_position(&game_state->game_world, player_right_rp);
+    game_world_position_t player_world_position_right =
+        readjust_position(&game_state->game_world, player_right_rp);
 
     b32 can_player_move = true;
     if (!(is_tile_map_point_empty_in_world(&game_state->game_world,
-                                           player_canonical_position_center) &&
+                                           player_world_position_center) &&
           is_tile_map_point_empty_in_world(&game_state->game_world,
-                                           player_canonical_position_left) &&
+                                           player_world_position_left) &&
           is_tile_map_point_empty_in_world(&game_state->game_world,
-                                           player_canonical_position_right)))
+                                           player_world_position_right)))
     {
         can_player_move = false;
     }
@@ -380,7 +378,7 @@ __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
     // Convert player coords to tile map coords.
     if (can_player_move)
     {
-        game_state->player_position = player_canonical_position_center;
+        game_state->player_position = player_world_position_center;
     }
 
     // Basic tile map rendering.
