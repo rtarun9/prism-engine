@@ -32,15 +32,25 @@ typedef struct
 } game_input_t;
 
 // Tile chunk related information.
-// TODO: make the chunks be square?
-#define TILE_CHUNK_DIM_X 256u
-#define TILE_CHUNK_DIM_Y 256u
+#define TILE_CHUNK_DIM 256u
+
+// NOTE: The absolute tile index consist of 2 parts : The lower 8 bits
+// constitute the index of tile within the chunk, while the higher 24 bits are
+// the index of chunk in the world.
+#define GET_CHUNK_INDEX_IN_WORLD(x) (((x) & 0xffffff00) > 0xff)
+#define GET_TILE_INDEX_IN_CHUNK(x) ((x) & 0x000000ff)
+
+#define SET_CHUNK_INDEX(tile_pos, chunk_index)                                 \
+    ((tile_pos & 0x000000ff | (chunk_index << 8)))
+
+#define SET_TILE_INDEX_IN_CHUNK(tile_pos, tile_index)                          \
+    ((tile_pos & 0xffffff00 | (tile_index & 0x000000ff)))
 
 #define INVALID_TILE_VALUE 0xffffffff
 
 typedef struct
 {
-    u32 tiles[TILE_CHUNK_DIM_Y][TILE_CHUNK_DIM_X];
+    u32 tiles[TILE_CHUNK_DIM][TILE_CHUNK_DIM];
 } game_tile_chunk_t;
 
 typedef struct
@@ -49,9 +59,6 @@ typedef struct
 
     u32 tile_chunk_count_x;
     u32 tile_chunk_count_y;
-
-    f32 bottom_left_x;
-    f32 bottom_left_y;
 
     // Tile width and height are in meters.
     u32 tile_width;
@@ -80,13 +87,10 @@ typedef struct
     f32 player_height;
 
     // The number of pixels that makes up a meter.
-    // TODO: Make this u32 again!
-    i32 pixels_per_meter;
+    u32 pixels_per_meter;
 
     game_world_t game_world;
 
-    // NOTE: TEMP
-    u32 chunk_index_mask;
 } game_state_t;
 
 typedef struct

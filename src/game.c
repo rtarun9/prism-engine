@@ -60,47 +60,6 @@ internal void game_render_rectangle(
     }
 }
 
-// Handy helper function to get tile chunk index and tile index inside the tile
-// chunk from the absolute tile coord.
-typedef struct
-{
-    u32 tile_chunk_index_x;
-    u32 tile_chunk_index_y;
-
-    u32 tile_index_x;
-    u32 tile_index_y;
-} game_tile_chunk_position_t;
-
-game_tile_chunk_position_t get_tile_chunk_position_from_abs_coords(
-    u32 abs_tile_x, u32 abs_tile_y, u32 chunk_index_mask)
-{
-    const u32 tile_index_mask = ~chunk_index_mask;
-
-    game_tile_chunk_position_t result = {};
-    result.tile_chunk_index_x = abs_tile_x & chunk_index_mask;
-    result.tile_chunk_index_y = abs_tile_y & chunk_index_mask;
-
-    result.tile_index_x = abs_tile_x & tile_index_mask;
-    result.tile_index_y = abs_tile_y & tile_index_mask;
-
-    return result;
-}
-
-// TODO: Are both versions required?
-game_tile_chunk_position_t get_tile_chunk_position_from_game_coord(
-    const game_world_position_t position, const u32 chunk_index_mask)
-{
-    const u32 tile_index_mask = ~chunk_index_mask;
-
-    game_tile_chunk_position_t result = {};
-    result.tile_chunk_index_x = position.abs_tile_index_x & chunk_index_mask;
-    result.tile_chunk_index_y = position.abs_tile_index_y & chunk_index_mask;
-
-    result.tile_index_x = position.abs_tile_index_x & tile_index_mask;
-    result.tile_index_y = position.abs_tile_index_y & tile_index_mask;
-
-    return result;
-}
 // Adjust value of tile index if tile rel goes
 // over the tile dimension.
 // Adjust values of tile index & tile rel inplace.
@@ -133,16 +92,10 @@ internal game_world_position_t readjust_position(
     return result;
 }
 
-// NOTE: Assertions disabled. If there is no tile chunk, don't hit a assertion,
-// just return null.
-// TODO: Check if assertion is still required here.
 internal game_tile_chunk_t *get_tile_chunk_from_world(
     game_world_t *const restrict world, u32 tile_chunk_x, u32 tile_chunk_y)
 {
     ASSERT(world);
-
-    // ASSERT(tile_chunk_x >= 0 && tile_chunk_x < world->tile_chunk_count_x);
-    // ASSERT(tile_chunk_y >= 0 && tile_chunk_y < world->tile_chunk_count_y);
 
     if (tile_chunk_x < world->tile_chunk_count_x &&
         tile_chunk_y < world->tile_chunk_count_y)
@@ -156,13 +109,14 @@ internal game_tile_chunk_t *get_tile_chunk_from_world(
     return NULL;
 }
 
-internal u32 get_tile_chunk_value(game_tile_chunk_t *const restrict tile_chunk,
-                                  const u32 tile_index_x, u32 tile_index_y)
+internal u32
+get_tile_value_in_chunk(game_tile_chunk_t *const restrict tile_chunk,
+                        const u32 tile_index_x, const u32 tile_index_y)
 {
     if (tile_chunk)
     {
-        if (tile_index_x < (i32)TILE_CHUNK_DIM_X &&
-            tile_index_y < (i32)TILE_CHUNK_DIM_Y)
+        if (tile_index_x < (i32)TILE_CHUNK_DIM &&
+            tile_index_y < (i32)TILE_CHUNK_DIM)
         {
             return tile_chunk->tiles[tile_index_y][tile_index_x];
         }
@@ -171,56 +125,31 @@ internal u32 get_tile_chunk_value(game_tile_chunk_t *const restrict tile_chunk,
     return INVALID_TILE_VALUE;
 }
 
-internal u32
-get_tile_chunk_value_in_world(game_world_t *const restrict world,
-                              const game_tile_chunk_position_t position)
+internal u32 get_tile_value_in_world(game_world_t *const restrict world,
+                                     const game_world_position_t world_position)
 
 {
     game_tile_chunk_t *tile_chunk = get_tile_chunk_from_world(
-        world, position.tile_chunk_index_x, position.tile_chunk_index_y);
+        world, GET_CHUNK_INDEX_IN_WORLD(world_position.abs_tile_index_x),
+        GET_CHUNK_INDEX_IN_WORLD(world_position.abs_tile_index_y));
 
-    ASSERT(tile_chunk);
-
-    return get_tile_chunk_value(tile_chunk, position.tile_index_x,
-                                position.tile_index_y);
-}
-
-internal b32
-is_tile_chunk_point_empty(game_tile_chunk_t *const restrict tile_chunk,
-                          const u32 tile_index_x, const u32 tile_index_y)
-{
     if (tile_chunk)
     {
-        return get_tile_chunk_value(tile_chunk, tile_index_x, tile_index_y) ==
-               0;
+        return get_tile_value_in_chunk(
+            tile_chunk,
+            GET_TILE_INDEX_IN_CHUNK(world_position.abs_tile_index_x),
+            GET_TILE_INDEX_IN_CHUNK(world_position.abs_tile_index_y));
     }
 
-    return false;
-}
-
-internal u32 get_tile_value_in_world(game_world_t *const restrict world,
-                                     const game_tile_chunk_position_t position)
-
-{
-    // Convert x and y first into tile map coords.
-    game_tile_chunk_t *tile_chunk = get_tile_chunk_from_world(
-        world, position.tile_chunk_index_x, position.tile_chunk_index_y);
-
-    return get_tile_chunk_value(tile_chunk, position.tile_index_x,
-                                position.tile_index_y);
+    return INVALID_TILE_VALUE;
 }
 
 internal b32
-is_tile_chunk_point_empty_in_world(game_world_t *const restrict world,
-                                   const game_tile_chunk_position_t position)
+is_tile_point_empty_in_world(game_world_t *const restrict world,
+                             const game_world_position_t world_position)
 
 {
-    // Convert x and y first into tile map coords.
-    game_tile_chunk_t *tile_chunk = get_tile_chunk_from_world(
-        world, position.tile_chunk_index_x, position.tile_chunk_index_y);
-
-    return is_tile_chunk_point_empty(tile_chunk, position.tile_index_x,
-                                     position.tile_index_y);
+    return get_tile_value_in_world(world, world_position) == 0;
 }
 
 __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
@@ -237,8 +166,6 @@ __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
     {
         game_state->pixels_per_meter = 100;
 
-        game_state->chunk_index_mask = 0xffffff00;
-
         // The position of player bottom center.
         game_world_position_t player_pos = {};
         player_pos.abs_tile_index_x = 2;
@@ -252,11 +179,6 @@ __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
         game_state->game_world.tile_width = 1u;
         game_state->game_world.tile_height = 1u;
 
-        game_state->game_world.bottom_left_x = 50.0f;
-        game_state->game_world.bottom_left_y =
-            (f32)game_offscreen_buffer->height -
-            game_state->game_world.tile_height * game_state->pixels_per_meter;
-
         game_state->game_world.tile_chunk_count_x = 1;
         game_state->game_world.tile_chunk_count_y = 1;
 
@@ -269,15 +191,15 @@ __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
     game_tile_chunk_t tile_chunk_00 = {
     .tiles = {
             {1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1, 1,    1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1, 1},
-            {1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1,    1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1},
-            {1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1,    1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1},
-            {1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1,    1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1},
-            {0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1,    0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1},
-            {1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1,    1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1},
-            {1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1,    1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1},
-            {1, 1, 1, 1,  1, 1, 1, 1,  0, 1, 1, 1,  1, 1, 1, 1, 1,    1, 1, 1, 1,  1, 1, 1, 1,  0, 1, 1, 1,  1, 1, 1, 1, 1},
+            {1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 0,    0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1},
+            {1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 0,    0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1},
+            {1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 0,    0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1},
+            {0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 0,    0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1},
+            {1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 0,    0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1},
+            {1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 0,    0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1},
+            {1, 1, 1, 1,  1, 1, 1, 1,  0, 0, 0, 0,  1, 1, 1, 1, 0,    0, 1, 1, 1,  1, 1, 1, 1,  0, 1, 1, 1,  1, 1, 1, 1, 1},
 
-            {1, 1, 1, 1,  1, 1, 1, 1,  0, 1, 1, 1,  1, 1, 1, 1, 1,    1, 1, 1, 1,  1, 1, 1, 1,  0, 1, 1, 1,  1, 1, 1, 1, 1},
+            {1, 1, 1, 1,  1, 1, 1, 1,  0, 0, 0, 0,  1, 1, 1, 1, 1,    1, 1, 1, 1,  1, 1, 1, 1,  0, 1, 1, 1,  1, 1, 1, 1, 1},
             {1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1,    1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1},
             {1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1,    1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1},
             {1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1,    1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1},
@@ -358,18 +280,12 @@ __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
         readjust_position(&game_state->game_world, player_right_rp);
 
     b32 can_player_move = true;
-    if (!(is_tile_chunk_point_empty_in_world(
-              &game_state->game_world, get_tile_chunk_position_from_game_coord(
-                                           player_world_position_center,
-                                           game_state->chunk_index_mask)) &&
-          is_tile_chunk_point_empty_in_world(
-              &game_state->game_world,
-              get_tile_chunk_position_from_game_coord(
-                  player_world_position_left, game_state->chunk_index_mask)) &&
-          is_tile_chunk_point_empty_in_world(
-              &game_state->game_world,
-              get_tile_chunk_position_from_game_coord(
-                  player_world_position_right, game_state->chunk_index_mask))))
+    if (!(is_tile_point_empty_in_world(&game_state->game_world,
+                                       player_world_position_center) &&
+          is_tile_point_empty_in_world(&game_state->game_world,
+                                       player_world_position_left) &&
+          is_tile_point_empty_in_world(&game_state->game_world,
+                                       player_world_position_right)))
     {
         can_player_move = false;
     }
@@ -393,12 +309,13 @@ __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
 
             f32 color = 0.0f;
 
-            game_tile_chunk_position_t render_tile_chunk_position =
-                get_tile_chunk_position_from_abs_coords(
-                    tile_x, tile_y, game_state->chunk_index_mask);
+            game_world_position_t tile_position = {
+                .abs_tile_index_x = tile_x,
+                .abs_tile_index_y = tile_y,
+            };
 
-            u32 current_tile_value = get_tile_value_in_world(
-                &game_state->game_world, render_tile_chunk_position);
+            u32 current_tile_value =
+                get_tile_value_in_world(&game_state->game_world, tile_position);
 
             if (current_tile_value == INVALID_TILE_VALUE)
             {
@@ -420,19 +337,19 @@ __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
             // origin).
             f32 fb_tile_left_x =
                 (f32)(center_x + (x * (i32)game_state->game_world.tile_width *
-                                  game_state->pixels_per_meter));
+                                  (i32)game_state->pixels_per_meter));
 
             f32 fb_tile_right_x =
-                fb_tile_left_x + (game_state->pixels_per_meter *
+                fb_tile_left_x + ((i32)game_state->pixels_per_meter *
                                   (i32)game_state->game_world.tile_width);
 
             f32 fb_tile_bottom_y =
                 (f32)(center_y -
                       ((y) * (i32)game_state->game_world.tile_height *
-                       game_state->pixels_per_meter));
+                       (i32)game_state->pixels_per_meter));
 
             f32 fb_tile_top_y =
-                fb_tile_bottom_y - (game_state->pixels_per_meter *
+                fb_tile_bottom_y - ((i32)game_state->pixels_per_meter *
                                     game_state->game_world.tile_height);
 
             game_render_rectangle(game_offscreen_buffer, fb_tile_left_x,
@@ -441,7 +358,8 @@ __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
         }
     }
 
-    f32 fb_player_left_x = center_x;
+    f32 fb_player_left_x = center_x + game_state->pixels_per_meter *
+                                          (game_state->player_width / 2.0f);
 
     f32 fb_player_right_x = fb_player_left_x + (game_state->pixels_per_meter *
                                                 game_state->player_width);
