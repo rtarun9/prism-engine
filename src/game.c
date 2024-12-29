@@ -218,7 +218,7 @@ __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
 
     // delta time in ms per frame.
     // Player movement speed is in meters per second.
-    const f32 player_movement_speed = game_input->delta_time * 12.0f / 1000.0f;
+    const f32 player_movement_speed = game_input->delta_time * 6.0f / 1000.0f;
 
     // NOTE: Player & world coords are such that y increases up, x increases
     // right (normal math coord system).
@@ -297,8 +297,15 @@ __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
     }
 
     // NOTE: Player is always rendered right at the center of screen.
-    const f32 center_x = game_offscreen_buffer->width / 2.0f;
-    const f32 center_y = game_offscreen_buffer->height / 2.0f;
+    const f32 center_x = game_offscreen_buffer->width / 2.0f -
+                         game_state->pixels_per_meter *
+                             game_state->player_position.tile_rel_x *
+                             game_state->game_world.tile_width;
+
+    const f32 center_y = game_offscreen_buffer->height / 2.0f +
+                         game_state->pixels_per_meter *
+                             game_state->player_position.tile_rel_y *
+                             game_state->game_world.tile_height;
 
     for (i32 y = -7; y < 7; y++)
     {
@@ -327,7 +334,7 @@ __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
                 color = 1.0f;
             }
 
-            // Higher player current tile position.
+            // Highlight player current tile position.
             if (x == 0 && y == 0)
             {
                 color = 0.5f;
@@ -358,17 +365,23 @@ __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
         }
     }
 
-    f32 fb_player_left_x = center_x + game_state->pixels_per_meter *
-                                          (game_state->player_width / 2.0f);
+    // Render the player.
+    f32 fb_player_left_x =
+        center_x +
+        game_state->pixels_per_meter *
+            (-game_state->player_width / 2.0f +
+             game_state->player_position.tile_rel_x * game_state->player_width);
 
     f32 fb_player_right_x = fb_player_left_x + (game_state->pixels_per_meter *
                                                 game_state->player_width);
 
-    f32 fb_player_bottom_y = center_y;
-    f32 fb_player_top_y = fb_player_bottom_y - game_state->pixels_per_meter *
-                                                   game_state->player_height;
+    f32 fb_player_bottom_y = center_y - game_state->player_position.tile_rel_y *
+                                            game_state->player_height *
+                                            game_state->pixels_per_meter;
 
-    // Render the player.
+    f32 fb_player_top_y = fb_player_bottom_y - (game_state->pixels_per_meter *
+                                                game_state->player_height);
+
     game_render_rectangle(game_offscreen_buffer, fb_player_left_x,
                           fb_player_top_y, fb_player_right_x,
                           fb_player_bottom_y, 0.1f, 0.2f, 1.0f, 1.0f);
