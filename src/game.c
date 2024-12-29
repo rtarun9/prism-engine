@@ -2,16 +2,18 @@
 
 #include "common.h"
 
+// NOTE: The top left x and y are relative to 'framebuffer' coordinates, where
+// the top left corner is origin.
 internal void game_render_rectangle(
     game_offscreen_buffer_t *restrict const buffer, f32 top_left_x,
-    f32 top_left_y, u32 width, u32 height, f32 normalized_red,
+    f32 top_left_y, f32 bottom_right_x, f32 bottom_right_y, f32 normalized_red,
     f32 normalized_green, f32 normalized_blue, f32 normalized_alpha)
 {
     i32 min_x = round_f32_to_i32(top_left_x);
     i32 min_y = round_f32_to_i32(top_left_y);
 
-    i32 max_x = round_f32_to_i32(top_left_x + width);
-    i32 max_y = round_f32_to_i32(top_left_y + height);
+    i32 max_x = round_f32_to_i32(bottom_right_x);
+    i32 max_y = round_f32_to_i32(bottom_right_y);
 
     if (min_x < 0)
     {
@@ -214,13 +216,15 @@ __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
         game_state->player_position = player_pos;
 
         game_state->player_width = 0.65f;
-        game_state->player_height = 1;
-
-        game_state->game_world.top_left_x = 0.0f;
-        game_state->game_world.top_left_y = 0.0f;
+        game_state->player_height = 1.0f;
 
         game_state->game_world.tile_width = 1u;
         game_state->game_world.tile_height = 1u;
+
+        game_state->game_world.bottom_left_x = 0.0f;
+        game_state->game_world.bottom_left_y =
+            (f32)game_offscreen_buffer->height -
+            game_state->game_world.tile_height * game_state->pixels_per_meter;
 
         game_state->game_world.tile_map_count_x = 2;
         game_state->game_world.tile_map_count_y = 2;
@@ -229,67 +233,71 @@ __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
     }
 
     // clang-format off
+    // NOTE: The bottom left tile is considered as 0, 0.
+    // This means that the tiles in the tile map prefab are flipped.
     game_tile_map_t tile_map00 = {
         .tile_map = {
-            {1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1, 1},
-            {1, 1, 0, 0,  0, 1, 0, 0,  0, 0, 0, 0,  0, 1, 0, 0, 1},
-            {1, 1, 0, 0,  0, 0, 0, 0,  1, 0, 0, 0,  0, 0, 1, 0, 1},
-            {1, 0, 0, 0,  0, 0, 0, 0,  1, 0, 0, 0,  0, 0, 0, 0, 1},
-            {1, 0, 0, 0,  0, 1, 0, 0,  1, 0, 0, 0,  0, 0, 0, 0, 0},
-            {1, 1, 0, 0,  0, 1, 0, 0,  1, 0, 0, 0,  0, 1, 0, 0, 1},
-            {1, 0, 0, 0,  0, 1, 0, 0,  1, 0, 0, 0,  1, 0, 0, 0, 1},
+            {1, 1, 1, 1,  1, 1, 1, 1,  0, 1, 1, 1,  1, 1, 1, 1, 1},
             {1, 1, 1, 1,  1, 0, 0, 0,  0, 0, 0, 0,  0, 1, 0, 0, 1},
+            {1, 1, 1, 1,  0, 0, 0, 0,  1, 0, 0, 0,  0, 0, 0, 0, 1},
+            {1, 0, 0, 0,  0, 1, 0, 0,  1, 0, 0, 0,  0, 0, 1, 0, 1},
+            {0, 0, 0, 0,  0, 1, 0, 0,  0, 0, 0, 0,  0, 1, 0, 0, 0},
+            {1, 0, 0, 0,  0, 0, 0, 0,  1, 0, 0, 0,  0, 0, 0, 0, 1},
+            {1, 1, 0, 0,  0, 0, 0, 0,  1, 0, 0, 0,  0, 0, 0, 0, 1},
+            {1, 1, 0, 0,  0, 1, 0, 0,  0, 0, 0, 0,  0, 1, 0, 0, 1},
             {1, 1, 1, 1,  1, 1, 1, 1,  0, 1, 1, 1,  1, 1, 1, 1, 1}
+
         }
     };
 
     game_tile_map_t tile_map01 = {
         .tile_map = {
-            {1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1, 1},
+            {1, 1, 1, 1,  1, 1, 1, 1,  0, 1, 1, 1,  1, 1, 1, 1, 1},
             {1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 1, 0, 0, 1},
-            {1, 0, 0, 0,  0, 0, 0, 0,  1, 0, 0, 0,  0, 0, 1, 0, 1},
-            {1, 0, 0, 0,  0, 0, 0, 0,  1, 0, 0, 0,  0, 0, 0, 0, 1},
-            {0, 0, 0, 0,  0, 0, 0, 0,  1, 0, 0, 0,  0, 0, 0, 0, 0},
-            {1, 0, 0, 0,  0, 0, 0, 0,  1, 0, 0, 0,  0, 1, 0, 0, 1},
             {1, 0, 0, 0,  0, 0, 0, 0,  1, 0, 0, 0,  1, 0, 0, 0, 1},
-            {1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 1, 0, 0, 1},
-            {1, 1, 1, 1,  1, 1, 1, 1,  0, 1, 1, 1,  1, 1, 1, 1, 1}
+            {1, 0, 0, 0,  0, 0, 0, 0,  1, 0, 0, 0,  0, 1, 0, 0, 1},
+            {0, 0, 0, 0,  0, 0, 0, 0,  1, 0, 0, 0,  0, 0, 0, 0, 0},
+            {1, 0, 0, 0,  0, 0, 0, 0,  1, 0, 0, 0,  0, 0, 1, 0, 0},
+            {1, 0, 0, 0,  0, 0, 0, 0,  1, 0, 0, 0,  0, 0, 1, 0, 1},
+            {1, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 1},
+            {1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1, 1}
         }
     };
 
     game_tile_map_t tile_map10 = {
         .tile_map = {
             {1, 1, 1, 1,  1, 1, 1, 1,  0, 1, 1, 1,  1, 1, 1, 1, 1},
-            {1, 1, 0, 0,  0, 1, 0, 0,  0, 0, 0, 0,  0, 1, 0, 0, 1},
-            {1, 1, 0, 0,  0, 1, 0, 0,  1, 1, 0, 0,  0, 0, 1, 0, 1},
+            {1, 1, 1, 1,  1, 0, 0, 0,  0, 1, 0, 0,  0, 1, 1, 0, 1},
+            {1, 0, 0, 0,  0, 1, 0, 0,  1, 1, 0, 0,  1, 1, 1, 0, 1},
+            {1, 1, 0, 0,  0, 1, 0, 0,  1, 1, 0, 0,  0, 1, 1, 0, 1},
+            {1, 0, 0, 0,  0, 1, 0, 0,  1, 1, 0, 0,  0, 1, 1, 0, 0},
             {1, 0, 0, 0,  0, 1, 0, 0,  1, 1, 0, 0,  0, 1, 1, 0, 1},
             {1, 0, 0, 0,  0, 1, 0, 0,  1, 1, 0, 0,  0, 1, 1, 0, 0},
-            {1, 1, 0, 0,  0, 1, 0, 0,  1, 1, 0, 0,  0, 1, 1, 0, 1},
-            {1, 0, 0, 0,  0, 1, 0, 0,  1, 1, 0, 0,  1, 1, 1, 0, 1},
-            {1, 1, 1, 1,  1, 0, 0, 0,  0, 1, 0, 0,  0, 1, 1, 0, 1},
-            {1, 1, 1, 1,  1, 1, 1, 1,  0, 1, 1, 1,  1, 1, 1, 1, 1}
+            {1, 0, 0, 0,  0, 1, 0, 0,  1, 1, 0, 0,  0, 1, 1, 0, 1},
+            {1, 1, 0, 0,  0, 1, 0, 0,  1, 1, 0, 0,  0, 0, 1, 0, 1}
+
         }
     };
 
     game_tile_map_t tile_map11 = {
         .tile_map = {
             {1, 1, 1, 1,  1, 1, 1, 1,  0, 1, 1, 1,  1, 1, 1, 1, 1},
-            {1, 1, 0, 0,  0, 1, 0, 0,  0, 0, 0, 0,  0, 1, 0, 0, 1},
-            {1, 1, 0, 0,  0, 0, 0, 0,  1, 0, 0, 0,  0, 0, 1, 0, 1},
-            {1, 0, 0, 0,  0, 0, 0, 0,  1, 0, 0, 0,  0, 0, 0, 0, 1},
-            {0, 0, 0, 0,  0, 1, 0, 0,  1, 0, 0, 0,  0, 0, 0, 0, 0},
-            {1, 1, 0, 0,  0, 1, 0, 0,  1, 0, 0, 0,  0, 1, 0, 0, 1},
-            {1, 0, 0, 0,  0, 1, 0, 0,  1, 0, 0, 0,  1, 0, 0, 0, 1},
+            {1, 1, 1, 1,  1, 1, 1, 1,  0, 1, 1, 1,  1, 1, 1, 1, 1},
             {1, 1, 1, 1,  1, 0, 0, 0,  0, 0, 0, 0,  0, 1, 0, 0, 1},
-            {1, 1, 1, 1,  1, 1, 1, 1,  0, 1, 1, 1,  1, 1, 1, 1, 1}
+            {1, 1, 1, 1,  1, 0, 0, 0,  0, 0, 0, 0,  0, 1, 0, 0, 0},
+            {1, 0, 0, 0,  0, 1, 0, 0,  1, 0, 0, 0,  0, 0, 0, 0, 0},
+            {0, 0, 0, 0,  0, 1, 0, 0,  1, 0, 0, 0,  0, 0, 0, 0, 0},
+            {1, 0, 0, 0,  0, 0, 0, 0,  1, 0, 0, 0,  0, 0, 0, 0, 1},
+            {1, 1, 0, 0,  0, 0, 0, 0,  1, 0, 0, 0,  0, 1, 0, 0, 1},
+            {1, 1, 0, 0,  0, 1, 0, 0,  1, 1, 0, 0,  0, 1, 1, 0, 1}
         }
     };
     // clang-format on
 
     // Clear screen.
     game_render_rectangle(
-        game_offscreen_buffer, 0.0f, 0.0f, game_offscreen_buffer->width,
-        game_offscreen_buffer->height, 0.0f, 0.0f, 0.0f, 1.0f);
+        game_offscreen_buffer, 0.0f, 0.0f, (f32)game_offscreen_buffer->width,
+        (f32)game_offscreen_buffer->height, 0.0f, 0.0f, 0.0f, 1.0f);
 
     game_tile_map_t tile_maps[4] = {tile_map00, tile_map01, tile_map10,
                                     tile_map11};
@@ -299,17 +307,19 @@ __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
     // Player movement speed is in meters per second.
     const f32 player_movement_speed = game_input->delta_time * 10.0f / 1000.0f;
 
+    // NOTE: Player & world coords are such that y increases up, x increases
+    // right (normal math coord system).
     f32 new_player_x = game_state->player_position.tile_rel_x;
     f32 new_player_y = game_state->player_position.tile_rel_y;
 
     if (game_input->keyboard_state.key_w.is_key_down)
     {
-        new_player_y -= player_movement_speed;
+        new_player_y += player_movement_speed;
     }
 
     if (game_input->keyboard_state.key_s.is_key_down)
     {
-        new_player_y += player_movement_speed;
+        new_player_y -= player_movement_speed;
     }
 
     if (game_input->keyboard_state.key_a.is_key_down)
@@ -384,13 +394,24 @@ __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
     {
         for (u32 x = 0; x < TILE_MAP_DIM_X; x++)
         {
-            f32 tile_top_left_x = (f32)(game_state->game_world.top_left_x +
-                                        (x * game_state->game_world.tile_width *
-                                         game_state->pixels_per_meter));
-            f32 tile_top_left_y =
-                (f32)(game_state->game_world.top_left_y +
-                      (y * game_state->game_world.tile_height *
+            // NOTE: These are in framebuffer coords (top left corner is
+            // origin).
+            f32 fb_tile_left_x = (f32)(game_state->game_world.bottom_left_x +
+                                       (x * game_state->game_world.tile_width *
+                                        game_state->pixels_per_meter));
+
+            f32 fb_tile_right_x =
+                fb_tile_left_x + (game_state->pixels_per_meter *
+                                  game_state->game_world.tile_width);
+
+            f32 fb_tile_bottom_y =
+                (f32)(game_state->game_world.bottom_left_y -
+                      ((y)*game_state->game_world.tile_height *
                        game_state->pixels_per_meter));
+
+            f32 fb_tile_top_y =
+                fb_tile_bottom_y - (game_state->pixels_per_meter *
+                                    game_state->game_world.tile_height);
 
             f32 color = 0.0f;
             if (current_tile_map->tile_map[y][x] == 1u)
@@ -405,34 +426,35 @@ __declspec(dllexport) DEF_GAME_UPDATE_AND_RENDER_FUNC(game_update_and_render)
                 color = 0.5f;
             }
 
-            game_render_rectangle(game_offscreen_buffer, tile_top_left_x,
-                                  tile_top_left_y,
-                                  game_state->game_world.tile_width *
-                                      game_state->pixels_per_meter,
-                                  game_state->game_world.tile_height *
-                                      game_state->pixels_per_meter,
-                                  color, color, color, 1.0f);
+            game_render_rectangle(game_offscreen_buffer, fb_tile_left_x,
+                                  fb_tile_top_y, fb_tile_right_x,
+                                  fb_tile_bottom_y, color, color, color, 1.0f);
         }
     }
 
-    f32 top_left_x = game_state->pixels_per_meter *
-                     (game_state->player_position.tile_rel_x *
-                          game_state->game_world.tile_width +
-                      game_state->player_position.tile_index_x *
-                          game_state->game_world.tile_width -
-                      game_state->player_width / 2.0f);
+    f32 fb_player_left_x = game_state->game_world.bottom_left_x +
+                           game_state->pixels_per_meter *
+                               (game_state->player_position.tile_rel_x *
+                                    game_state->game_world.tile_width +
+                                game_state->player_position.tile_index_x *
+                                    game_state->game_world.tile_width -
+                                game_state->player_width / 2.0f);
 
-    f32 top_left_y = game_state->pixels_per_meter *
-                     (game_state->player_position.tile_rel_y *
-                          game_state->game_world.tile_height +
-                      game_state->player_position.tile_index_y *
-                          game_state->game_world.tile_height -
-                      game_state->player_height);
+    f32 fb_player_right_x = fb_player_left_x + (game_state->pixels_per_meter *
+                                                game_state->player_width);
+
+    f32 fb_player_bottom_y = game_state->game_world.bottom_left_y -
+                             game_state->pixels_per_meter *
+                                 (game_state->player_position.tile_rel_y *
+                                      game_state->game_world.tile_height +
+                                  game_state->player_position.tile_index_y *
+                                      game_state->game_world.tile_height);
+
+    f32 fb_player_top_y = fb_player_bottom_y - game_state->pixels_per_meter *
+                                                   game_state->player_height;
 
     // Render the player.
-    game_render_rectangle(
-        game_offscreen_buffer, top_left_x, top_left_y,
-        (u32)(game_state->player_width * game_state->pixels_per_meter),
-        (u32)(game_state->player_height * game_state->pixels_per_meter), 0.1f,
-        0.2f, 1.0f, 1.0f);
+    game_render_rectangle(game_offscreen_buffer, fb_player_left_x,
+                          fb_player_top_y, fb_player_right_x,
+                          fb_player_bottom_y, 0.1f, 0.2f, 1.0f, 1.0f);
 }

@@ -49,8 +49,8 @@ typedef struct
     u32 tile_map_count_x;
     u32 tile_map_count_y;
 
-    f32 top_left_x;
-    f32 top_left_y;
+    f32 bottom_left_x;
+    f32 bottom_left_y;
 
     // Tile width and height are in meters.
     u32 tile_width;
