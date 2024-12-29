@@ -31,23 +31,24 @@ typedef struct
     f32 delta_time;
 } game_input_t;
 
-// Tile map related information.
-#define TILE_MAP_DIM_X 17u
-#define TILE_MAP_DIM_Y 9u
+// Tile chunk related information.
+// TODO: make the chunks be square?
+#define TILE_CHUNK_DIM_X 256u
+#define TILE_CHUNK_DIM_Y 256u
 
-#define INVALID_TILE_MAP_VALUE 0xffffffff
-
-typedef struct
-{
-    u32 tile_map[TILE_MAP_DIM_Y][TILE_MAP_DIM_X];
-} game_tile_map_t;
+#define INVALID_TILE_VALUE 0xffffffff
 
 typedef struct
 {
-    game_tile_map_t *tile_maps;
+    u32 tiles[TILE_CHUNK_DIM_Y][TILE_CHUNK_DIM_X];
+} game_tile_chunk_t;
 
-    u32 tile_map_count_x;
-    u32 tile_map_count_y;
+typedef struct
+{
+    game_tile_chunk_t *tile_chunks;
+
+    u32 tile_chunk_count_x;
+    u32 tile_chunk_count_y;
 
     f32 bottom_left_x;
     f32 bottom_left_y;
@@ -59,12 +60,11 @@ typedef struct
 
 typedef struct
 {
-    u32 tile_index_x;
-    u32 tile_index_y;
+    // The absolute tile index into the (toroidal) world, which is unbounded
+    u32 abs_tile_index_x;
+    u32 abs_tile_index_y;
 
-    u32 tile_map_index_x;
-    u32 tile_map_index_y;
-
+    // fp offset into a particular tile.
     f32 tile_rel_x;
     f32 tile_rel_y;
 } game_world_position_t;
@@ -83,6 +83,9 @@ typedef struct
     u32 pixels_per_meter;
 
     game_world_t game_world;
+
+    // NOTE: TEMP
+    u32 chunk_index_mask;
 } game_state_t;
 
 typedef struct
